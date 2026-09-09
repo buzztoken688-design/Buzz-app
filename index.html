@@ -1430,12 +1430,19 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b51-editarlogo-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b53-enviar-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
   const ZORP_TOKEN     = '0xaB841a1E0cC65A3cC41b842C85E0cE51C87fb28E';
-  const BUZZ_SWAP       = '0xb58205cb2cE339578c44f3528F40A4e0B681360B'; // BuzzSwapGeneric — 3 routers + comision con buyback automatico a BUZZ (08/09/2026)
+  const BUZZ_SWAP       = '0xAF4625052B42B568B3C3fB5C7a3250e9DB6e4FcF'; // BuzzSwapGeneric v2 — SSTORE2 corregida, los logos ahora si se guardan (09/09/2026)
+  // Contrato propio de envíos: la transacción apunta acá y no al token, así
+  // se puede mandar CUALQUIER token sin darlo de alta en Contract Entrypoints.
+  const BUZZ_SEND = '0xe4d51B25463c35a1DD7F1e73913562224e82e35b';
+  // Permit2 de Uniswap, misma dirección en todas las redes. World App ya
+  // aprueba cada ERC-20 nuevo a este contrato por su cuenta.
+  const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+
   const WORLDSWAP_ROUTER = '0xaf628e998656968a8e78bf183d2a07234d6afa29'; // DEX separado, misma interfaz que Uniswap V2, propia factory 0x02E72c4e...
   const WORLDSWAP_FACTORY = '0x02E72c4edf877FBacfD1fC594422004D9746E14D';
   const BUZZ_TREASURY  = '0x3D3C7AB150B0414a8c9a1d2A802193349346A186'; // recibe la comisión directo (patrón LOOT)
@@ -3103,15 +3110,32 @@
 
     try{
       const amountWei = ethers.parseUnits(amountStr.replace(',', '.'), sendToken.decimals);
-      const iface = new ethers.Interface([
-        'function transfer(address to, uint256 amount) returns (bool)'
-      ]);
-      const data = iface.encodeFunctionData('transfer', [to, amountWei]);
 
-      const res = await k.sendTransaction({
-        chainId: CHAIN_ID,
-        transactions: [{ to: sendToken.address.toLowerCase(), data }]
-      });
+      // Dos pasos en una sola firma:
+      //  1. dentro de Permit2, se le da permiso a BuzzSend por este monto.
+      //     La expiración va en 0 a propósito: el permiso se consume en la
+      //     misma transacción y no queda nada abierto después.
+      //  2. BuzzSend le pide a Permit2 que mueva el token del que firma al
+      //     destinatario. El token nunca pasa por el contrato.
+      const permit2Iface = new ethers.Interface([
+        'function approve(address token, address spender, uint160 amount, uint48 expiration)'
+      ]);
+      const sendIface = new ethers.Interface([
+        'function enviar(address token, address para, uint256 monto)'
+      ]);
+
+      const transactions = [
+        { to: PERMIT2,
+          data: permit2Iface.encodeFunctionData('approve', [
+            sendToken.address.toLowerCase(), BUZZ_SEND, amountWei, 0
+          ]) },
+        { to: BUZZ_SEND,
+          data: sendIface.encodeFunctionData('enviar', [
+            sendToken.address.toLowerCase(), to, amountWei
+          ]) }
+      ];
+
+      const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
 
       const ok = (res && res.data && res.data.status === 'success')
         || (res && res.finalPayload && res.finalPayload.status !== 'error');
