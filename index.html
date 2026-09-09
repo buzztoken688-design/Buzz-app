@@ -1180,6 +1180,14 @@
       </div>
 
 
+      <div class="card" id="misTokensCard" style="display:none;">
+        <div class="card-title"><img class="icimg" data-ic="tokens" alt="">Tokens que agregaste</div>
+        <div class="crear-hint" style="margin-bottom:10px;">
+          Podés cambiarles el logo y las redes las veces que quieras, sin volver a pagar.
+        </div>
+        <div id="misTokensLista"></div>
+      </div>
+
       <div class="card" id="adminCard" style="display:none; border-color:var(--buzz-dim);">
         <div class="card-title"><img class="icimg" data-ic="herramientas" alt="">Tokens que agregaron los usuarios</div>
         <div class="crear-hint" style="margin-bottom:10px;">
@@ -1244,6 +1252,10 @@
     <div class="field-label">Cantidad</div>
     <input class="field" id="sendAmount" inputmode="decimal" placeholder="0.0" style="margin-bottom:18px;">
     <button class="btn" id="btnSend">Enviar</button>
+    <div id="sendErrorPanel" style="display:none; margin-top:12px; padding:12px;
+         border:1px solid var(--red); border-radius:12px; background:rgba(255,77,77,.08);
+         color:#ffb3b3; font-size:10.5px; line-height:1.5; white-space:pre-wrap;
+         word-break:break-all; max-height:260px; overflow:auto;"></div>
   </div>
 </div>
 
@@ -1430,7 +1442,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b54-swapv3-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b56-errorenvio-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1696,6 +1708,7 @@
     document.getElementById('userTag').textContent = username ? '@'+username : shortAddr(userAddress);
     document.getElementById('walletAddrShort').textContent = shortAddr(userAddress);
     mostrarPanelAdmin();
+    cargarMisTokens();
     document.getElementById('receiveAddr').textContent = userAddress;
     document.getElementById('profileUser').textContent = username ? '@'+username : 'Sin username';
     document.getElementById('profileAddr').textContent = userAddress;
@@ -2332,6 +2345,8 @@
     document.getElementById('detailSendBtn').onclick = () => {
       closeModal('tokenDetailModal');
       selectToken('send', tk);
+      const pe = document.getElementById('sendErrorPanel');
+      if(pe){ pe.style.display = 'none'; pe.textContent = ''; }
       openModal('sendModal');
     };
 
@@ -2496,6 +2511,72 @@
   function mostrarPanelAdmin(){
     const c = document.getElementById('adminCard');
     if(c) c.style.display = esAdmin() ? 'block' : 'none';
+  }
+
+  // Los tokens que ESTA wallet agregó pagando. Se sacan del mismo evento
+  // TokenAgregado, mirando el segundo campo indexado (quién lo agregó).
+  async function cargarMisTokens(){
+    const card  = document.getElementById('misTokensCard');
+    const lista = document.getElementById('misTokensLista');
+    if(!card || !lista || !userAddress) return;
+
+    let mios = [];
+    try{
+      const url = EXPLORER_API +
+        '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+        '&address=' + BUZZ_SWAP +
+        '&topic0=' + TOPIC_TOKEN_AGREGADO;
+      const r = await fetch(url);
+      const d = await r.json();
+      const eventos = Array.isArray(d && d.result) ? d.result : [];
+      const yo = userAddress.toLowerCase();
+      const vistos = new Set();
+      eventos.forEach(ev => {
+        const t = ev.topics || [];
+        if(t.length < 3) return;
+        const token = ('0x' + t[1].slice(26)).toLowerCase();
+        const quien = ('0x' + t[2].slice(26)).toLowerCase();
+        if(quien !== yo || vistos.has(token)) return;
+        vistos.add(token);
+        mios.push(token);
+      });
+    }catch(e){ return; }
+
+    if(!mios.length){ card.style.display = 'none'; return; }
+
+    card.style.display = 'block';
+    lista.innerHTML = '<div class="empty-state">Cargando…</div>';
+
+    const p = await getReadProvider();
+    const datos = await Promise.all(mios.map(async (a) => {
+      try{
+        const c = new ethers.Contract(a, ERC20_ABI, p);
+        const [n, sim] = await Promise.all([c.name(), c.symbol()]);
+        return { address: a, nombre: n, simbolo: sim };
+      }catch(e){ return { address: a, nombre: '?', simbolo: '?' }; }
+    }));
+
+    lista.innerHTML = '';
+    datos.forEach(x => {
+      const row = document.createElement('div');
+      row.className = 'token-row';
+      row.innerHTML =
+        '<div class="tk-info">' +
+          '<div class="tk-name">' + esc(x.nombre) + '</div>' +
+          '<div class="tk-sub">' + esc(x.simbolo) + ' · ' + esc(shortAddr(x.address)) + '</div>' +
+        '</div>';
+      const b = document.createElement('button');
+      b.className = 'mini-add';
+      b.textContent = 'Editar';
+      b.style.marginLeft = 'auto';
+      b.onclick = () => {
+        abrirAgregarToken();
+        document.getElementById('atAddr').value = x.address;
+        atVerificar();
+      };
+      row.appendChild(b);
+      lista.appendChild(row);
+    });
   }
 
   async function adminBuscar(){
@@ -3151,7 +3232,26 @@
       }
     }catch(e){
       console.error(e);
-      showToast('Error al enviar', true);
+      const codigo  = (e && e.code) || '';
+      const mensaje = (e && e.message) || '';
+      if(/user_rejected|user_cancelled|cancelled|rejected/i.test(codigo + ' ' + mensaje)){
+        showToast('Envío cancelado');
+        document.getElementById('sendErrorPanel').style.display = 'none';
+      }else{
+        const panel = document.getElementById('sendErrorPanel');
+        panel.style.display = 'block';
+        const detalles = {
+          name: e && e.name,
+          message: e && e.message,
+          code: e && e.code,
+          cause: e && e.cause ? String(e.cause) : undefined,
+          keys: e ? Object.keys(e) : [],
+          propiedades: e ? Object.fromEntries(Object.entries(e).map(([k,v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)])) : {},
+          stack: e && e.stack
+        };
+        panel.textContent = 'EXCEPCIÓN COMPLETA:\n' + JSON.stringify(detalles, null, 1);
+        showToast('Error — mirá el panel rojo abajo del botón', true);
+      }
     }
   };
 
