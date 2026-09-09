@@ -1430,12 +1430,12 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b53-enviar-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b54-swapv3-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
   const ZORP_TOKEN     = '0xaB841a1E0cC65A3cC41b842C85E0cE51C87fb28E';
-  const BUZZ_SWAP       = '0xAF4625052B42B568B3C3fB5C7a3250e9DB6e4FcF'; // BuzzSwapGeneric v2 — SSTORE2 corregida, los logos ahora si se guardan (09/09/2026)
+  const BUZZ_SWAP       = '0xe1E8530E130BdBA54aA2c09145eF05Be3C9d5905'; // BuzzSwapGeneric v3 — SSTORE2 con el arranque correcto: los logos se guardan de verdad (09/09/2026)
   // Contrato propio de envíos: la transacción apunta acá y no al token, así
   // se puede mandar CUALQUIER token sin darlo de alta en Contract Entrypoints.
   const BUZZ_SEND = '0xe4d51B25463c35a1DD7F1e73913562224e82e35b';
