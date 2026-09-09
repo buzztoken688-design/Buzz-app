@@ -1180,6 +1180,18 @@
       </div>
 
 
+      <div class="card" id="adminCard" style="display:none; border-color:var(--buzz-dim);">
+        <div class="card-title"><img class="icimg" data-ic="herramientas" alt="">Tokens que agregaron los usuarios</div>
+        <div class="crear-hint" style="margin-bottom:10px;">
+          Cada uno pagó 3 WLD. Para que se puedan operar tienen que estar
+          también en Contract Entrypoints del Developer Portal.
+        </div>
+        <div id="adminLista"><div class="empty-state">—</div></div>
+        <button class="btn secondary" id="btnAdminRefrescar" style="margin-top:12px;">Buscar</button>
+        <button class="btn secondary" id="btnAdminCopiar" style="margin-top:8px; display:none;">Copiar todas</button>
+        <div class="logo-info" id="adminOut" style="margin-top:8px; min-height:16px;"></div>
+      </div>
+
       <div class="card">
         <div class="card-title"><img class="icimg" data-ic="regalo" alt="">Invitá y ganá</div>
         <div class="empty-state">Próximamente</div>
@@ -1348,6 +1360,8 @@
     <div class="crear-hint" style="margin-bottom:14px;">
       Cualquiera puede sumar un token de World Chain a la lista de la app.
       Cuesta <b>3 WLD</b> y queda disponible para todos los usuarios.
+      Puede tardar unas horas en quedar operativo, porque hace falta una
+      habilitación manual del lado de World App.
     </div>
 
     <div class="field-label">Dirección del contrato</div>
@@ -1413,7 +1427,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b43-corte5-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b46-admin-wallet-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1671,6 +1685,7 @@
     document.getElementById('app').style.display = 'block';
     document.getElementById('userTag').textContent = username ? '@'+username : shortAddr(userAddress);
     document.getElementById('walletAddrShort').textContent = shortAddr(userAddress);
+    mostrarPanelAdmin();
     document.getElementById('receiveAddr').textContent = userAddress;
     document.getElementById('profileUser').textContent = username ? '@'+username : 'Sin username';
     document.getElementById('profileAddr').textContent = userAddress;
@@ -2367,6 +2382,106 @@
     }
   }
 
+  // ============================================================
+  //  PANEL DEL DUEÑO — qué tokens agregó la gente
+  //  El contrato emite TokenAgregado(token, quien) cada vez que
+  //  alguien paga los 3 WLD. Acá se leen esos eventos del
+  //  explorador y se descuentan los 57 de la carga inicial, así
+  //  quedan solo los que hay que habilitar en el portal.
+  // ============================================================
+  const ADMIN_WALLET = '0x3de83b386c983426547b3b42e50b810ab9a25deb'; // wallet de World App (la tesorería es otra, la de MetaMask)
+  const TOPIC_TOKEN_AGREGADO =
+    '0x8a7b44b9383b55c49d53aab10239532ae74e32683b218b8f20a1764aabd9c7ee';
+  let adminTokens = [];
+
+  function esAdmin(){
+    return !!userAddress && userAddress.toLowerCase() === ADMIN_WALLET;
+  }
+
+  function mostrarPanelAdmin(){
+    const c = document.getElementById('adminCard');
+    if(c) c.style.display = esAdmin() ? 'block' : 'none';
+  }
+
+  async function adminBuscar(){
+    if(!esAdmin()) return;
+    const lista = document.getElementById('adminLista');
+    const out   = document.getElementById('adminOut');
+    const btnC  = document.getElementById('btnAdminCopiar');
+    lista.innerHTML = '<div class="empty-state">Buscando…</div>';
+    out.textContent = '';
+    btnC.style.display = 'none';
+    adminTokens = [];
+
+    try{
+      const url = EXPLORER_API +
+        '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+        '&address=' + BUZZ_SWAP +
+        '&topic0=' + TOPIC_TOKEN_AGREGADO;
+      const r = await fetch(url);
+      const d = await r.json();
+      const eventos = Array.isArray(d && d.result) ? d.result : [];
+
+      // los 57 de la carga inicial también emiten el evento: se descuentan
+      const iniciales = new Set(
+        [WLD_ADDRESS, ZORP_TOKEN].concat(CURATED_TOKEN_ADDRESSES).map(a => a.toLowerCase())
+      );
+
+      const vistos = new Set();
+      eventos.forEach(ev => {
+        const t = ev.topics || [];
+        if(t.length < 3) return;
+        const token = ('0x' + t[1].slice(26)).toLowerCase();
+        const quien = ('0x' + t[2].slice(26)).toLowerCase();
+        if(iniciales.has(token) || vistos.has(token)) return;
+        vistos.add(token);
+        adminTokens.push({ token, quien });
+      });
+
+      if(!adminTokens.length){
+        lista.innerHTML = '<div class="empty-state">Todavía nadie agregó un token.</div>';
+        return;
+      }
+
+      // nombre y símbolo de cada uno, leídos de la cadena
+      const p = await getReadProvider();
+      await Promise.all(adminTokens.map(async (x) => {
+        try{
+          const c = new ethers.Contract(x.token, ERC20_ABI, p);
+          const [n, sim] = await Promise.all([c.name(), c.symbol()]);
+          x.nombre = n; x.simbolo = sim;
+        }catch(e){ x.nombre = '?'; x.simbolo = '?'; }
+      }));
+
+      lista.innerHTML = adminTokens.map(x =>
+        '<div class="token-row">' +
+          '<div class="tk-info">' +
+            '<div class="tk-name">' + esc(x.nombre) + ' · ' + esc(x.simbolo) + '</div>' +
+            '<div class="tk-sub" style="word-break:break-all;">' + esc(x.token) + '</div>' +
+            '<div class="tk-sub" style="word-break:break-all; color:var(--text-faint);">lo agregó ' +
+              esc(shortAddr(x.quien)) + '</div>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+      btnC.style.display = 'block';
+      out.textContent = adminTokens.length + ' token(s) para habilitar en el portal.';
+    }catch(e){
+      lista.innerHTML = '<div class="empty-state">No se pudo leer el explorador.</div>';
+      out.textContent = (e && e.message) ? e.message : '';
+    }
+  }
+
+  async function adminCopiar(){
+    if(!adminTokens.length) return;
+    const txt = adminTokens.map(x => x.token).join(',');
+    try{
+      await navigator.clipboard.writeText(txt);
+      showToast('Direcciones copiadas');
+    }catch(e){
+      document.getElementById('adminOut').textContent = txt;   // por si el portapapeles está bloqueado
+    }
+  }
+
   function openTokenPicker(target){
     pickerTarget = target;
     const listEl = document.getElementById('tokenPickerList');
@@ -2394,6 +2509,8 @@
     openModal('tokenPickerModal');
   }
 
+  document.getElementById('btnAdminRefrescar').addEventListener('click', adminBuscar);
+  document.getElementById('btnAdminCopiar').addEventListener('click', adminCopiar);
   document.getElementById('atAddr').addEventListener('input', atVerificarLuego);
   document.getElementById('atLogo').addEventListener('change', atElegirLogo);
   document.getElementById('btnAgregarToken').addEventListener('click', atEnviar);
