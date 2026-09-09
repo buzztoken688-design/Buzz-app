@@ -1430,7 +1430,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b47-buscador-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b48-operar-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2599,24 +2599,31 @@
 
     listEl.innerHTML = '';
     encontrados.forEach(tk => {
-      const row = pickerFila(tk, tk.permitido ? 'fuera de tu lista' : 'sin habilitar');
-      row.onclick = () => {
-        if(tk.permitido){
-          selectToken(pickerTarget, tk);
-          closeModal('tokenPickerModal');
-        }else{
+      const row = pickerFila(tk, tk.permitido ? 'listo para operar' : 'sin habilitar');
+      // tocar la fila SIEMPRE lo elige para operar; agregarlo es aparte
+      row.onclick = () => { selectToken(pickerTarget, tk); closeModal('tokenPickerModal'); };
+
+      if(!tk.permitido){
+        const b = document.createElement('button');
+        b.className = 'mini-add';
+        b.textContent = '+ Agregar';
+        b.style.marginLeft = 'auto';
+        b.onclick = (ev) => {
+          ev.stopPropagation();               // no dispara el onclick de la fila
           abrirAgregarToken();
           document.getElementById('atAddr').value = tk.address;
           atVerificar();
-        }
-      };
+        };
+        row.appendChild(b);
+      }
       listEl.appendChild(row);
     });
 
     if(encontrados.some(tk => !tk.permitido)){
       extraEl.innerHTML =
         '<div class="crear-hint" style="margin-top:10px;">' +
-        'Los que dicen “sin habilitar” todavía no están en la app. Tocalos para sumarlos por 3 WLD.' +
+        'Si al operar te da error, es que ese token todavía no está habilitado: ' +
+        'tocá “+ Agregar” para sumarlo por 3 WLD.' +
         '</div>';
     }
   }
