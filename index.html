@@ -1345,7 +1345,10 @@
     <div class="close-x" onclick="closeModal('tokenPickerModal')">✕</div>
     <div class="modal-handle"></div>
     <div class="modal-title">Elegí un token</div>
+    <input class="field" id="pickerSearch" placeholder="Nombre, símbolo o pegar la dirección"
+           autocomplete="off" autocapitalize="off" spellcheck="false" style="margin-bottom:12px;">
     <div id="tokenPickerList"></div>
+    <div id="pickerExtra"></div>
     <button class="btn secondary" style="margin-top:14px;" onclick="abrirAgregarToken()">
       ➕ Agregar un token
     </button>
@@ -1427,7 +1430,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b46-admin-wallet-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b47-buscador-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2482,33 +2485,143 @@
     }
   }
 
+  let pickerLista  = [];
+  let pickerTimer  = null;
+
   function openTokenPicker(target){
     pickerTarget = target;
-    const listEl = document.getElementById('tokenPickerList');
-    listEl.innerHTML = '';
-    const tokensToShow = walletTokens.length ? walletTokens : KNOWN_TOKENS;
-    tokensToShow.forEach(tk=>{
-      const row = document.createElement('div');
-      row.className = 'token-row';
-      row.style.cursor = 'pointer';
-      row.innerHTML = `
-        <div class="tk-icon">${tkIconHtml(tk)}</div>
-        <div class="tk-info">
-          <div class="tk-name">${tk.name}</div>
-          <div class="tk-sub">${tk.symbol}${tk.balance ? ' · ' + trimNum(tk.balance) : ''}</div>
-        </div>`;
-      row.onclick = ()=>{
-        selectToken(target, tk);
-        closeModal('tokenPickerModal');
-      };
-      listEl.appendChild(row);
-    });
-    if(!tokensToShow.length){
-      listEl.innerHTML = '<div class="empty-state">No se encontraron tokens</div>';
-    }
+    pickerLista = walletTokens.length ? walletTokens : KNOWN_TOKENS;
+    const buscador = document.getElementById('pickerSearch');
+    buscador.value = '';
+    renderPicker('');
     openModal('tokenPickerModal');
   }
 
+  function pickerFila(tk, nota){
+    const row = document.createElement('div');
+    row.className = 'token-row';
+    row.style.cursor = 'pointer';
+    row.innerHTML =
+      '<div class="tk-icon">' + tkIconHtml(tk) + '</div>' +
+      '<div class="tk-info">' +
+        '<div class="tk-name">' + esc(tk.name || tk.symbol || '?') + '</div>' +
+        '<div class="tk-sub">' + esc(tk.symbol || '') +
+          (tk.balance ? ' · ' + trimNum(tk.balance) : '') +
+          (nota ? ' · ' + esc(nota) : '') +
+        '</div>' +
+      '</div>';
+    return row;
+  }
+
+  function renderPicker(q){
+    const listEl  = document.getElementById('tokenPickerList');
+    const extraEl = document.getElementById('pickerExtra');
+    listEl.innerHTML = '';
+    extraEl.innerHTML = '';
+    const t = (q || '').trim().toLowerCase();
+
+    const filtrados = !t ? pickerLista : pickerLista.filter(tk =>
+      (tk.symbol  || '').toLowerCase().includes(t) ||
+      (tk.name    || '').toLowerCase().includes(t) ||
+      (tk.address || '').toLowerCase().includes(t)
+    );
+
+    filtrados.forEach(tk => {
+      const row = pickerFila(tk);
+      row.onclick = () => { selectToken(pickerTarget, tk); closeModal('tokenPickerModal'); };
+      listEl.appendChild(row);
+    });
+
+    if(!filtrados.length){
+      listEl.innerHTML = t
+        ? '<div class="empty-state">No está en tu lista. Buscando en World Chain…</div>'
+        : '<div class="empty-state">No se encontraron tokens</div>';
+      if(t) pickerBuscarFueraLuego(t);
+    }
+  }
+
+  function pickerBuscarFueraLuego(t){
+    if(pickerTimer) clearTimeout(pickerTimer);
+    pickerTimer = setTimeout(() => pickerBuscarFuera(t), 450);
+  }
+
+  // Busca un token que NO está en la lista de la app: si pegaron una
+  // dirección la lee directo de la cadena; si escribieron un nombre o
+  // símbolo, lo busca en los pools de World Chain vía GeckoTerminal.
+  async function pickerBuscarFuera(t){
+    const listEl  = document.getElementById('tokenPickerList');
+    const extraEl = document.getElementById('pickerExtra');
+    let candidatos = [];
+
+    try{
+      if(/^0x[0-9a-fA-F]{40}$/.test(t)){
+        candidatos = [{ address: t.toLowerCase() }];
+      }else{
+        const j = await gtJson(`${GT_BASE}/search/pools?query=${encodeURIComponent(t)}`);
+        const vistos = new Set();
+        ((j && j.data) || []).forEach(p => {
+          const id = ((p.relationships && p.relationships.base_token
+                       && p.relationships.base_token.data && p.relationships.base_token.data.id) || '');
+          const m = id.match(/0x[0-9a-fA-F]{40}/);
+          if(!m) return;
+          const a = m[0].toLowerCase();
+          if(a === WLD_ADDRESS.toLowerCase() || vistos.has(a)) return;
+          vistos.add(a);
+          candidatos.push({ address: a });
+        });
+        candidatos = candidatos.slice(0, 6);
+      }
+    }catch(e){ candidatos = []; }
+
+    if(!candidatos.length){
+      listEl.innerHTML = '<div class="empty-state">No se encontró ningún token con eso.</div>';
+      return;
+    }
+
+    // datos reales de la cadena + si ya está habilitado para operar
+    const p = await getReadProvider();
+    const sw = new ethers.Contract(BUZZ_SWAP, AT_ABI, p);
+    const encontrados = [];
+    await Promise.all(candidatos.map(async (c) => {
+      try{
+        const tok = new ethers.Contract(c.address, ERC20_ABI, p);
+        const [name, symbol, decimals] = await Promise.all([tok.name(), tok.symbol(), tok.decimals()]);
+        const ok = await sw.tokenPermitido(c.address).catch(() => false);
+        encontrados.push({ address: c.address, name, symbol, decimals: Number(decimals),
+                           icon: null, permitido: !!ok });
+      }catch(e){ /* no es un ERC-20 */ }
+    }));
+
+    if(!encontrados.length){
+      listEl.innerHTML = '<div class="empty-state">No se pudo leer ese contrato.</div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+    encontrados.forEach(tk => {
+      const row = pickerFila(tk, tk.permitido ? 'fuera de tu lista' : 'sin habilitar');
+      row.onclick = () => {
+        if(tk.permitido){
+          selectToken(pickerTarget, tk);
+          closeModal('tokenPickerModal');
+        }else{
+          abrirAgregarToken();
+          document.getElementById('atAddr').value = tk.address;
+          atVerificar();
+        }
+      };
+      listEl.appendChild(row);
+    });
+
+    if(encontrados.some(tk => !tk.permitido)){
+      extraEl.innerHTML =
+        '<div class="crear-hint" style="margin-top:10px;">' +
+        'Los que dicen “sin habilitar” todavía no están en la app. Tocalos para sumarlos por 3 WLD.' +
+        '</div>';
+    }
+  }
+
+  document.getElementById('pickerSearch').addEventListener('input', (e) => renderPicker(e.target.value));
   document.getElementById('btnAdminRefrescar').addEventListener('click', adminBuscar);
   document.getElementById('btnAdminCopiar').addEventListener('click', adminCopiar);
   document.getElementById('atAddr').addEventListener('input', atVerificarLuego);
