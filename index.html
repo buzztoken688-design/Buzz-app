@@ -1430,7 +1430,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b50-agregados-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b51-editarlogo-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2341,7 +2341,8 @@
   const AT_COSTO_WLD = '3';
   const AT_ABI = [
     'function tokenPermitido(address) view returns (bool)',
-    'function agregarToken(address token, bytes logo, string twitter, string telegram, string web)'
+    'function agregarToken(address token, bytes logo, string twitter, string telegram, string web)',
+    'function actualizarMetadata(address token, bytes logo, string twitter, string telegram, string web)'
   ];
   let atLogoBytes = null;
   let atValido    = null;   // {address, nombre, simbolo} del último token verificado
@@ -2355,6 +2356,7 @@
     document.getElementById('atLogoInfo').textContent = 'Se achica a 128 px para que entre en la cadena.';
     document.getElementById('atEstado').innerHTML = '&nbsp;';
     document.getElementById('atOut').textContent = '';
+    document.getElementById('btnAgregarToken').textContent = 'Agregar por 3 WLD';
     openModal('addTokenModal');
   }
 
@@ -2378,11 +2380,14 @@
       const sw = new ethers.Contract(BUZZ_SWAP, AT_ABI, p);
       const ya = await sw.tokenPermitido(dir.toLowerCase()).catch(()=> false);
       if(ya){
-        est.textContent = nombre + ' (' + simbolo + ') ya está en la lista.';
+        atValido = { address: dir, nombre, simbolo, ya: true };
+        est.textContent = nombre + ' (' + simbolo + ') ya está en la lista. Podés actualizarle el logo y las redes gratis.';
+        document.getElementById('btnAgregarToken').textContent = 'Actualizar logo y redes';
         return;
       }
-      atValido = { address: dir, nombre, simbolo };
+      atValido = { address: dir, nombre, simbolo, ya: false };
       est.textContent = '✅ ' + nombre + ' · ' + simbolo + ' · ' + Number(dec) + ' decimales';
+      document.getElementById('btnAgregarToken').textContent = 'Agregar por 3 WLD';
     }catch(e){
       est.textContent = 'No se pudo leer: puede que no sea un ERC-20 de World Chain.';
     }
@@ -2420,28 +2425,40 @@
 
       const erc20Iface = new ethers.Interface(ERC20_ABI);
       const swapIface  = new ethers.Interface(AT_ABI);
-      const costo = ethers.parseUnits(AT_COSTO_WLD, 18);
-
-      const transactions = [
-        { to: WLD_ADDRESS.toLowerCase(),
-          data: erc20Iface.encodeFunctionData('approve', [BUZZ_SWAP, costo]) },
-        { to: BUZZ_SWAP,
-          data: swapIface.encodeFunctionData('agregarToken', [
-            atValido.address,
-            atLogoBytes ? ethers.hexlify(atLogoBytes) : '0x',
-            document.getElementById('atX').value.trim(),
-            document.getElementById('atTg').value.trim(),
-            document.getElementById('atWeb').value.trim()
-          ]) }
+      const args = [
+        atValido.address,
+        atLogoBytes ? ethers.hexlify(atLogoBytes) : '0x',
+        document.getElementById('atX').value.trim(),
+        document.getElementById('atTg').value.trim(),
+        document.getElementById('atWeb').value.trim()
       ];
+
+      let transactions;
+      if(atValido.ya){
+        // ya está en la lista: solo se actualiza la metadata, sin cobro
+        if(!atLogoBytes){ out.textContent = 'Elegí una imagen para actualizar.'; atEnviando = false; return; }
+        transactions = [
+          { to: BUZZ_SWAP, data: swapIface.encodeFunctionData('actualizarMetadata', args) }
+        ];
+      }else{
+        const costo = ethers.parseUnits(AT_COSTO_WLD, 18);
+        transactions = [
+          { to: WLD_ADDRESS.toLowerCase(),
+            data: erc20Iface.encodeFunctionData('approve', [BUZZ_SWAP, costo]) },
+          { to: BUZZ_SWAP, data: swapIface.encodeFunctionData('agregarToken', args) }
+        ];
+      }
 
       const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
       const ok = (res && res.data && res.data.status === 'success')
         || (res && res.finalPayload && res.finalPayload.status !== 'error');
 
       if(ok){
-        out.textContent = '✅ ' + atValido.simbolo + ' agregado. Ya se puede operar.';
-        showToast(atValido.simbolo + ' agregado a la lista');
+        out.textContent = atValido.ya
+          ? '✅ Logo actualizado.'
+          : '✅ ' + atValido.simbolo + ' agregado. Ya se puede operar.';
+        showToast(atValido.simbolo + (atValido.ya ? ' actualizado' : ' agregado a la lista'));
+        delete logoSwapCache[atValido.address.toLowerCase()];
         setTimeout(()=>{ closeModal('addTokenModal'); loadBalances(); }, 1400);
       }else{
         out.textContent = 'No se completó. Revisá que tengas 3 WLD y volvé a intentar.';
