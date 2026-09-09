@@ -834,7 +834,10 @@
       <div class="card">
         <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
           <span style="display:flex; align-items:center;"><img class="icimg" data-ic="tokens" alt="">Tus tokens</span>
-          <button class="mini-add" onclick="abrirAgregarToken()">+ Agregar</button>
+          <span style="display:flex; gap:8px;">
+            <button class="mini-add" id="btnRefrescar" onclick="refrescarTodo()" title="Actualizar">↻</button>
+            <button class="mini-add" onclick="abrirAgregarToken()">+ Agregar</button>
+          </span>
         </div>
         <div id="tokenList">
           <div class="empty-state">Cargando tokens…</div>
@@ -1442,7 +1445,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b58-logosdex-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b61-refrescar-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1774,6 +1777,42 @@
   // no trae, así que sirve de segunda fuente. El campo del logo viene dentro
   // de la info del par, no del token, y cambió de nombre con las versiones:
   // se prueban los tres lugares donde puede estar.
+  // ---------- caché de logos que sobrevive al cierre de la app ----------
+  // Sin esto, cada carga volvía a preguntar por los 25 tokens a dos APIs
+  // gratuitas, que cortan por exceso de pedidos: por eso los logos
+  // aparecían y desaparecían de una carga a la otra.
+  const LOGO_CACHE_KEY  = 'buzz_logos';
+  const LOGO_CACHE_DIAS = 7;
+  let logoCacheDisco = null;
+
+  function cargarCacheLogos(){
+    if(logoCacheDisco) return logoCacheDisco;
+    try{
+      const guardado = JSON.parse(localStorage.getItem(LOGO_CACHE_KEY) || '{}');
+      const corte = Date.now() - LOGO_CACHE_DIAS * 24 * 3600 * 1000;
+      logoCacheDisco = {};
+      Object.entries(guardado).forEach(([k, v]) => {
+        if(v && v.t > corte) logoCacheDisco[k] = v;   // se descartan los viejos
+      });
+    }catch(e){ logoCacheDisco = {}; }
+    return logoCacheDisco;
+  }
+
+  let guardarPendiente = null;
+  function guardarCacheLogos(){
+    if(guardarPendiente) clearTimeout(guardarPendiente);
+    guardarPendiente = setTimeout(() => {
+      try{ localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(logoCacheDisco || {})); }
+      catch(e){ /* si no hay lugar, se sigue sin caché */ }
+    }, 800);
+  }
+
+  function recordarLogo(addr, url){
+    const c = cargarCacheLogos();
+    c[addr] = { u: url || null, t: Date.now() };
+    guardarCacheLogos();
+  }
+
   async function getDexIcon(address){
     try{
       const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
@@ -1796,23 +1835,43 @@
     }
   }
 
-  // Cascada de fuentes: primero GeckoTerminal, después DexScreener. Si
-  // ninguna lo tiene, quien llama prueba el logo guardado en el contrato.
+  // Cascada de fuentes, en este orden:
+  //   1. GeckoTerminal
+  //   2. el logo guardado en el contrato de swap (instantáneo, sin límites)
+  //   3. DexScreener
+  // Antes de pedir nada se mira la caché, para no gastar pedidos al pedo.
   async function getGeckoIcon(address){
     const addr = address.toLowerCase();
     if(addr in geckoIconCache) return geckoIconCache[addr];
 
+    const cache = cargarCacheLogos();
+    if(addr in cache){
+      geckoIconCache[addr] = cache[addr].u;
+      return cache[addr].u;
+    }
+
     let finalUrl = null;
+
+    // 1) GeckoTerminal
     try{
       const r = await fetch(`https://api.geckoterminal.com/api/v2/networks/world-chain/tokens/${addr}`);
-      const d = await r.json();
-      const url = d?.data?.attributes?.image_url;
-      if(url && !url.includes('missing_large')) finalUrl = url;
-    }catch(e){ /* se prueba la otra fuente */ }
+      if(r.ok){
+        const d = await r.json();
+        const url = d?.data?.attributes?.image_url;
+        if(url && !url.includes('missing_large')) finalUrl = url;
+      }
+    }catch(e){ /* se sigue con las otras fuentes */ }
 
+    // 2) el que subió quien agregó el token, guardado en el contrato
+    if(!finalUrl){
+      try{ finalUrl = await logoDelContrato(addr); }catch(e){}
+    }
+
+    // 3) DexScreener
     if(!finalUrl) finalUrl = await getDexIcon(addr);
 
     geckoIconCache[addr] = finalUrl;
+    recordarLogo(addr, finalUrl);
     return finalUrl;
   }
 
@@ -1875,6 +1934,33 @@
       logoSwapCache[a] = null;
     }
     return logoSwapCache[a];
+  }
+
+  // Vuelve a leer saldos, precios y logos sin tener que cerrar la app.
+  // Con el botón apretado se ignora la caché de logos, así sirve también
+  // cuando alguien acaba de cambiarle la imagen a su token.
+  let refrescando = false;
+  async function refrescarTodo(){
+    if(refrescando) return;
+    refrescando = true;
+    const b = document.getElementById('btnRefrescar');
+    if(b){ b.textContent = '…'; b.style.opacity = '.6'; }
+    try{
+      // se olvidan los logos para que se busquen de nuevo
+      Object.keys(geckoIconCache).forEach(k => { delete geckoIconCache[k]; });
+      logoCacheDisco = {};
+      try{ localStorage.removeItem(LOGO_CACHE_KEY); }catch(e){}
+      Object.keys(logoSwapCache).forEach(k => { delete logoSwapCache[k]; });
+      agregadosCache = null;
+
+      await loadBalances();
+      if(typeof loadTrending === 'function') loadTrending(true);
+    }catch(e){
+      showToast('No se pudo actualizar', true);
+    }finally{
+      if(b){ b.textContent = '↻'; b.style.opacity = ''; }
+      refrescando = false;
+    }
   }
 
   async function loadBalances(){
@@ -1988,17 +2074,23 @@
       // resolver todos los íconos EN PARALELO (evita hacerlo uno por uno).
       // Los del launchpad no están en GeckoTerminal: su logo vive on-chain
       // en GekMetadataV3, que es de donde lo saca la ficha del token.
-      const geckoUrls = await Promise.all(priced.map(async (r) => {
+      // De a 5 por vez: pedir los 25 de golpe hacía que las APIs gratuitas
+      // cortaran por exceso y los logos salieran a veces sí y a veces no.
+      async function resolverLogo(r){
         if(r.icon && r.icon.startsWith('data:')) return null;
         if(r.esLanzado){
           const propio = await lzIcono(r.address);
           if(propio) return propio;
         }
-        const gecko = await getGeckoIcon(r.address);
-        if(gecko) return gecko;
-        // último recurso: el logo que subió quien agregó el token al contrato
-        return await logoDelContrato(r.address);
-      }));
+        return await getGeckoIcon(r.address);   // ya trae la cascada completa
+      }
+
+      const geckoUrls = [];
+      for(let i = 0; i < priced.length; i += 5){
+        const lote = priced.slice(i, i + 5);
+        const res  = await Promise.all(lote.map(resolverLogo));
+        geckoUrls.push(...res);
+      }
 
       priced.forEach((r, i) => {
         const geckoUrl = geckoUrls[i];
@@ -6179,11 +6271,24 @@
     });
   }
 
+  // Solo entran a Tendencias los tokens que de verdad se pueden operar:
+  // habilitados en el contrato y con movimiento real en las últimas 24 h.
+  // Sin esto la lista se llenaba de tokens muertos, con volumen 0 y el
+  // cartelito de "no habilitado", que al usuario no le sirven de nada.
+  const TREND_VOL_MINIMO = 1;   // dólares de volumen en 24 h
+
+  function trendingVisibles(){
+    return trendingTokens.filter(t =>
+      t.permitido !== false && (Number(t.volume24h) || 0) >= TREND_VOL_MINIMO
+    );
+  }
+
   function renderTrending(){
     // ---- lista completa (pantalla Tendencias) ----
     const listEl = document.getElementById('trendList');
     if(listEl){
-      if(!trendingTokens.length){
+      const visibles = trendingVisibles();
+      if(!visibles.length){
         listEl.innerHTML =
           '<div class="empty-state">No se pudo cargar Tendencias' +
           (trendingError ? '<br><br><span style="font-size:10.5px; color:var(--text-faint); word-break:break-all;">' +
@@ -6191,7 +6296,7 @@
           '<br><br><span style="color:var(--buzz); cursor:pointer;" onclick="loadTrending(true)">↻ Reintentar</span></div>';
       }else{
         listEl.innerHTML = '';
-        trendingTokens.forEach((t, i) => {
+        visibles.forEach((t, i) => {
           const row = document.createElement('div');
           row.className = 'trend-row';
           row.style.cursor = 'pointer';
@@ -6220,11 +6325,12 @@
     // ---- tira horizontal (pantalla Swap) ----
     const stripEl = document.getElementById('trendStrip');
     if(stripEl){
-      if(!trendingTokens.length){
+      const visiblesTira = trendingVisibles();
+      if(!visiblesTira.length){
         stripEl.innerHTML = '<div class="trend-empty">Sin datos por ahora</div>';
       }else{
         stripEl.innerHTML = '';
-        trendingTokens.slice(0, 12).forEach(t => {
+        visiblesTira.slice(0, 12).forEach(t => {
           const chip = document.createElement('button');
           chip.className = 'trend-chip';
           chip.innerHTML =
