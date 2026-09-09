@@ -168,7 +168,17 @@
     border-radius:20px; padding:22px 18px; margin-bottom:16px;
     position:relative; overflow:hidden;
   }
-  .balance-card .bc-top{display:flex; align-items:center; gap:8px;}
+  /* moneditas de miel decorativas: se recortan solas contra el borde
+     redondeado porque la tarjeta ya tiene overflow:hidden */
+  .balance-card .bc-deco{
+    position:absolute; right:-14px; bottom:-16px;
+    width:118px; height:118px; object-fit:contain;
+    opacity:.55; pointer-events:none; user-select:none;
+    filter:drop-shadow(0 6px 20px rgba(255,193,7,.28));
+  }
+  @media (max-width:340px){ .balance-card .bc-deco{width:92px; height:92px;} }
+  .balance-card .bc-top{display:flex; align-items:center; gap:8px; position:relative;}
+  .balance-card .amount, .balance-card .usd{position:relative;}
   .balance-card .eye{color:var(--text-faint); font-size:13px;}
   .balance-card .label{font-size:12px; color:var(--text-dim); margin-bottom:6px;}
   .balance-card .amount{font-size:34px; font-weight:800; color:var(--text); letter-spacing:.3px;}
@@ -793,6 +803,7 @@
     <!-- -------- INICIO -------- -->
     <section class="screen active" id="screen-inicio">
       <div class="balance-card">
+        <img class="bc-deco" data-ic="monedas" alt="">
         <div class="bc-top">
           <div class="label">Balance total estimado</div>
           <span class="eye">👁</span>
@@ -1402,7 +1413,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b41-addinicio-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b42-monedas-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
