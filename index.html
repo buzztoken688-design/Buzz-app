@@ -1430,7 +1430,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b49-cotizacadena-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b50-agregados-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1761,6 +1761,67 @@
     }
   }
 
+  // ============================================================
+  //  TOKENS AGREGADOS POR USUARIOS
+  //  La lista curada está escrita en este archivo, pero los que la
+  //  gente suma pagando 3 WLD viven SOLO en el contrato. Se leen de
+  //  los eventos TokenAgregado para que aparezcan en Inicio igual
+  //  que cualquier otro.
+  // ============================================================
+  let agregadosCache = null;
+
+  async function direccionesAgregadas(){
+    if(agregadosCache) return agregadosCache;
+    try{
+      const guardado = localStorage.getItem('buzz_agregados');
+      if(guardado) agregadosCache = JSON.parse(guardado);
+    }catch(e){ /* sin caché, se pide igual */ }
+
+    try{
+      const url = EXPLORER_API +
+        '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+        '&address=' + BUZZ_SWAP +
+        '&topic0=' + TOPIC_TOKEN_AGREGADO;
+      const r = await fetch(url);
+      const d = await r.json();
+      const eventos = Array.isArray(d && d.result) ? d.result : [];
+      const iniciales = new Set(
+        [WLD_ADDRESS, ZORP_TOKEN].concat(CURATED_TOKEN_ADDRESSES).map(a => a.toLowerCase())
+      );
+      const salida = [];
+      eventos.forEach(ev => {
+        const t = ev.topics || [];
+        if(t.length < 2) return;
+        const token = ('0x' + t[1].slice(26)).toLowerCase();
+        if(iniciales.has(token) || salida.indexOf(token) !== -1) return;
+        salida.push(token);
+      });
+      agregadosCache = salida;
+      try{ localStorage.setItem('buzz_agregados', JSON.stringify(salida)); }catch(e){}
+    }catch(e){ /* si el explorador falla, se usa lo que haya en caché */ }
+    return agregadosCache || [];
+  }
+
+  // El logo que subió quien agregó el token queda guardado en el propio
+  // contrato de swap (SSTORE2). Se usa cuando GeckoTerminal no tiene imagen.
+  const LOGO_SWAP_ABI = ['function logoDeToken(address) view returns (bytes)'];
+  const logoSwapCache = {};
+
+  async function logoDelContrato(addr){
+    const a = addr.toLowerCase();
+    if(a in logoSwapCache) return logoSwapCache[a];
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(BUZZ_SWAP, LOGO_SWAP_ABI, p);
+      const bytes = await c.logoDeToken(a);
+      const url = bytesAImagen(bytes);
+      logoSwapCache[a] = url || null;
+    }catch(e){
+      logoSwapCache[a] = null;
+    }
+    return logoSwapCache[a];
+  }
+
   async function loadBalances(){
     try{
       const p = await getReadProvider();
@@ -1773,13 +1834,17 @@
       // a la lista curada se suman los tokens del launchpad: si tenés saldo,
       // tienen que verse en Inicio como cualquier otro
       const delLaunchpad = await direccionesLanzadas();
+      const delContrato  = await direccionesAgregadas();
       const base = [
         WLD_ADDRESS.toLowerCase(),
         ZORP_TOKEN.toLowerCase(),
         ...CURATED_TOKEN_ADDRESSES.filter(a => a !== WLD_ADDRESS.toLowerCase() && a !== ZORP_TOKEN.toLowerCase())
       ];
-      const candidateAddresses = base.concat(
+      let candidateAddresses = base.concat(
         (delLaunchpad || []).filter(a => base.indexOf(a) === -1)
+      );
+      candidateAddresses = candidateAddresses.concat(
+        (delContrato || []).filter(a => candidateAddresses.indexOf(a) === -1)
       );
 
       async function readTokenInBatches(addresses, batchSize){
@@ -1874,7 +1939,10 @@
           const propio = await lzIcono(r.address);
           if(propio) return propio;
         }
-        return getGeckoIcon(r.address);
+        const gecko = await getGeckoIcon(r.address);
+        if(gecko) return gecko;
+        // último recurso: el logo que subió quien agregó el token al contrato
+        return await logoDelContrato(r.address);
       }));
 
       priced.forEach((r, i) => {
