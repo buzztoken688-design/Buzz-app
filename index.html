@@ -1430,7 +1430,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b48-operar-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b49-cotizacadena-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2752,6 +2752,29 @@
     }
   }
 
+  // Cotiza contra el pool real. Se usa cuando DexScreener no conoce el token
+  // (recién creado, poca liquidez, o simplemente no indexado): antes eso
+  // hacía que la app dijera "sin liquidez" aunque el pool existiera.
+  async function cotizarEnCadena(route, tokenIn, tokenOut, amountIn){
+    try{
+      const p = await getReadProvider();
+      if(route.type === 'v3'){
+        const out = await verificarRutaDirecta(tokenIn, tokenOut, route.poolFee, amountIn);
+        return (out && out > 0n) ? out : null;
+      }
+      const router = new ethers.Contract(
+        route.worldSwap ? WORLDSWAP_ROUTER : V2_ROUTER_REAL,
+        ['function getAmountsOut(uint256,address[]) view returns (uint256[])'],
+        p
+      );
+      const montos = await router.getAmountsOut(amountIn, [tokenIn, tokenOut]);
+      const out = montos && montos[montos.length - 1];
+      return (out && out > 0n) ? out : null;
+    }catch(e){
+      return null;
+    }
+  }
+
   async function getUsdPrice(address){
     try{
       const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
@@ -2793,6 +2816,24 @@
     quoteState.worldSwap = route.worldSwap || false;
 
     if(!priceFrom || !priceTo){
+      // sin precio en dólares no quiere decir sin pool: se le pregunta a la cadena
+      try{
+        const dec = fromToken.decimals != null ? Number(fromToken.decimals) : 18;
+        const decOut = toToken.decimals != null ? Number(toToken.decimals) : 18;
+        const entrada = ethers.parseUnits(String(amt), dec);
+        const salida  = await cotizarEnCadena(route, fromToken.address.toLowerCase(),
+                                              toToken.address.toLowerCase(), entrada);
+        if(salida){
+          const bruto = parseFloat(ethers.formatUnits(salida, decOut));
+          const neto  = bruto * (1 - 50/10000);      // menos la comisión del 0,50%
+          quoteState.noRoute  = false;
+          quoteState.outAmount = neto;
+          toAmountEl.value = trimNum(neto);
+          updateSwapButton();
+          return;
+        }
+      }catch(e){ /* si tampoco cotiza, se avisa abajo */ }
+
       quoteState.noRoute = true;
       quoteState.outAmount = null;
       toAmountEl.value = '';
@@ -2800,8 +2841,8 @@
       return;
     }
 
-    // valor en USD de lo que se paga, menos la comisión del router, convertido al token de salida
-    const feeBps = 50; // 0.50% (el contrato aplica 0.30% si tenés 100.000+ $ZORP, esto es una estimación conservadora)
+    // valor en USD de lo que se paga, menos la comisión, convertido al token de salida
+    const feeBps = 50; // 0,50%
     const usdValue = amt * priceFrom * (1 - feeBps/10000);
     const estimatedOut = usdValue / priceTo;
 
