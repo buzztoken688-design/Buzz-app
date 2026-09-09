@@ -1413,7 +1413,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b42-monedas-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b43-corte5-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3514,7 +3514,7 @@
   //    quieras cortar y solo se verán los de ahí en adelante.
   //  LANZADOS_OCULTOS: direcciones sueltas a esconder, en minúsculas.
   // ------------------------------------------------------------
-  const LANZADOS_DESDE = 0;
+  const LANZADOS_DESDE = 5;   // corte del 09/09/2026: los 5 tokens creados en World Launch quedan fuera
   const LANZADOS_OCULTOS = [
     // '0x0000000000000000000000000000000000000000',
   ].map(a => a.toLowerCase());
