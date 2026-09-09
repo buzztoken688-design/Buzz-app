@@ -1442,7 +1442,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b56-errorenvio-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b58-logosdex-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1450,6 +1450,11 @@
   const BUZZ_SWAP       = '0xe1E8530E130BdBA54aA2c09145eF05Be3C9d5905'; // BuzzSwapGeneric v3 — SSTORE2 con el arranque correcto: los logos se guardan de verdad (09/09/2026)
   // Contrato propio de envíos: la transacción apunta acá y no al token, así
   // se puede mandar CUALQUIER token sin darlo de alta en Contract Entrypoints.
+  // Paneles rojos con el detalle técnico del error. Se dejan APAGADOS para
+  // que el usuario no vea nada de esto; poner en true cuando haya que
+  // diagnosticar algo y el detalle vuelve a aparecer abajo del botón.
+  const DIAG_ERRORES = false;
+
   const BUZZ_SEND = '0xe4d51B25463c35a1DD7F1e73913562224e82e35b';
   // Permit2 de Uniswap, misma dirección en todas las redes. World App ya
   // aprueba cada ERC-20 nuevo a este contrato por su cuenta.
@@ -1765,20 +1770,50 @@
   const EXPLORER_API = 'https://worldchain-mainnet.explorer.alchemy.com/api';
   const geckoIconCache = {}; // address -> url de imagen (o null si no hay)
 
+  // Logo desde DexScreener. Tiene indexados muchos tokens que GeckoTerminal
+  // no trae, así que sirve de segunda fuente. El campo del logo viene dentro
+  // de la info del par, no del token, y cambió de nombre con las versiones:
+  // se prueban los tres lugares donde puede estar.
+  async function getDexIcon(address){
+    try{
+      const r = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
+      const d = await r.json();
+      const pares = (d && d.pairs) || [];
+      const a = address.toLowerCase();
+      for(const p of pares){
+        const info = p.info || {};
+        let url = info.imageUrl || info.image || null;
+        // si el token es el de la derecha del par, el logo puede venir aparte
+        if(!url && p.baseToken && p.baseToken.address &&
+           p.baseToken.address.toLowerCase() !== a && info.baseImageUrl){
+          url = info.baseImageUrl;
+        }
+        if(url) return url;
+      }
+      return null;
+    }catch(e){
+      return null;
+    }
+  }
+
+  // Cascada de fuentes: primero GeckoTerminal, después DexScreener. Si
+  // ninguna lo tiene, quien llama prueba el logo guardado en el contrato.
   async function getGeckoIcon(address){
     const addr = address.toLowerCase();
     if(addr in geckoIconCache) return geckoIconCache[addr];
+
+    let finalUrl = null;
     try{
       const r = await fetch(`https://api.geckoterminal.com/api/v2/networks/world-chain/tokens/${addr}`);
       const d = await r.json();
       const url = d?.data?.attributes?.image_url;
-      const finalUrl = (url && !url.includes('missing_large')) ? url : null;
-      geckoIconCache[addr] = finalUrl;
-      return finalUrl;
-    }catch(e){
-      geckoIconCache[addr] = null;
-      return null;
-    }
+      if(url && !url.includes('missing_large')) finalUrl = url;
+    }catch(e){ /* se prueba la otra fuente */ }
+
+    if(!finalUrl) finalUrl = await getDexIcon(addr);
+
+    geckoIconCache[addr] = finalUrl;
+    return finalUrl;
   }
 
   // ============================================================
@@ -3130,7 +3165,7 @@
           document.getElementById('swapErrorPanel').style.display = 'none';
         }else{
           const panel = document.getElementById('swapErrorPanel');
-          panel.style.display = 'block';
+          panel.style.display = DIAG_ERRORES ? 'block' : 'none';
           panel.textContent =
             'ROUTE: ' + quoteState.route + ' (fee ' + quoteState.poolFee + ')\n' +
             'APPROVE to: ' + approveCallData.to + '\n' +
@@ -3138,7 +3173,8 @@
             'SWAP to: ' + swapCallData.to + '\n' +
             'SWAP data: ' + swapCallData.data + '\n' +
             'RESPUESTA COMPLETA: ' + JSON.stringify(res);
-          showToast('Swap falló — mirá el panel rojo abajo del botón', true);
+          showToast(DIAG_ERRORES ? 'Swap falló — mirá el panel rojo abajo del botón'
+                                 : 'No se pudo completar el swap. Probá de nuevo.', true);
         }
       }
     }catch(e){
@@ -3152,7 +3188,7 @@
         document.getElementById('swapErrorPanel').style.display = 'none';
       }else{
         const panel = document.getElementById('swapErrorPanel');
-        panel.style.display = 'block';
+        panel.style.display = DIAG_ERRORES ? 'block' : 'none';
         const detalles = {
           name: e && e.name,
           message: e && e.message,
@@ -3163,7 +3199,8 @@
           stack: e && e.stack
         };
         panel.textContent = 'EXCEPCIÓN COMPLETA:\n' + JSON.stringify(detalles, null, 1);
-        showToast('Error — mirá el panel rojo abajo del botón', true);
+        showToast(DIAG_ERRORES ? 'Error — mirá el panel rojo abajo del botón'
+                               : 'No se pudo completar el swap. Probá de nuevo.', true);
       }
     }finally{
       // pase lo que pase (éxito, error, o cancelación en World App), siempre
@@ -3239,7 +3276,7 @@
         document.getElementById('sendErrorPanel').style.display = 'none';
       }else{
         const panel = document.getElementById('sendErrorPanel');
-        panel.style.display = 'block';
+        panel.style.display = DIAG_ERRORES ? 'block' : 'none';
         const detalles = {
           name: e && e.name,
           message: e && e.message,
@@ -3250,7 +3287,8 @@
           stack: e && e.stack
         };
         panel.textContent = 'EXCEPCIÓN COMPLETA:\n' + JSON.stringify(detalles, null, 1);
-        showToast('Error — mirá el panel rojo abajo del botón', true);
+        showToast(DIAG_ERRORES ? 'Error — mirá el panel rojo abajo del botón'
+                               : 'No se pudo enviar. Revisá el monto y probá de nuevo.', true);
       }
     }
   };
