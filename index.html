@@ -729,6 +729,15 @@
   .logo-btn:active{border-color:var(--buzz);}
   .logo-info{font-size:10.5px; color:var(--text-faint); margin-top:6px;}
 
+  /* botón chico para sumar un token desde Inicio */
+  .mini-add{
+    background:transparent; border:1px solid var(--buzz); color:var(--buzz);
+    border-radius:999px; padding:5px 12px; font-size:11.5px; font-weight:700;
+    font-family:inherit; white-space:nowrap; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .mini-add:active{background:var(--buzz); color:var(--ink);}
+
   .crear-head{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
   .back-btn{
     background:var(--panel-2); border:1px solid var(--border); color:var(--text);
@@ -812,7 +821,10 @@
       </button>
 
       <div class="card">
-        <div class="card-title"><img class="icimg" data-ic="tokens" alt="">Tus tokens</div>
+        <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span style="display:flex; align-items:center;"><img class="icimg" data-ic="tokens" alt="">Tus tokens</span>
+          <button class="mini-add" onclick="abrirAgregarToken()">+ Agregar</button>
+        </div>
         <div id="tokenList">
           <div class="empty-state">Cargando tokens…</div>
         </div>
@@ -1390,7 +1402,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b40-iconos2-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b41-addinicio-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
