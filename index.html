@@ -1445,7 +1445,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b61-refrescar-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b62-orden-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1976,17 +1976,23 @@
       // tienen que verse en Inicio como cualquier otro
       const delLaunchpad = await direccionesLanzadas();
       const delContrato  = await direccionesAgregadas();
-      const base = [
-        WLD_ADDRESS.toLowerCase(),
-        ZORP_TOKEN.toLowerCase(),
-        ...CURATED_TOKEN_ADDRESSES.filter(a => a !== WLD_ADDRESS.toLowerCase() && a !== ZORP_TOKEN.toLowerCase())
-      ];
-      let candidateAddresses = base.concat(
-        (delLaunchpad || []).filter(a => base.indexOf(a) === -1)
-      );
-      candidateAddresses = candidateAddresses.concat(
-        (delContrato || []).filter(a => candidateAddresses.indexOf(a) === -1)
-      );
+      // ORDEN A PROPÓSITO: primero WLD, después los tokens que agregó la
+      // gente y los del launchpad, y al final la lista curada. Antes los
+      // agregados iban últimos y, como la lectura va de a 30 por tanda, si
+      // una tanda fallaba se perdían justo esos. Yendo adelante, son los
+      // primeros en leerse y ya no dependen de que todo lo demás salga bien.
+      const primeros = [WLD_ADDRESS.toLowerCase(), ZORP_TOKEN.toLowerCase()];
+      let candidateAddresses = primeros.slice();
+
+      (delContrato || []).forEach(a => {
+        if(candidateAddresses.indexOf(a) === -1) candidateAddresses.push(a);
+      });
+      (delLaunchpad || []).forEach(a => {
+        if(candidateAddresses.indexOf(a) === -1) candidateAddresses.push(a);
+      });
+      CURATED_TOKEN_ADDRESSES.forEach(a => {
+        if(candidateAddresses.indexOf(a) === -1) candidateAddresses.push(a);
+      });
 
       async function readTokenInBatches(addresses, batchSize){
         const results = [];
@@ -2013,7 +2019,17 @@
         return results;
       }
 
-      const results = await readTokenInBatches(candidateAddresses, 30);
+      let results = await readTokenInBatches(candidateAddresses, 30);
+
+      // los que no se pudieron leer se reintentan una vez, de a poco: una
+      // lectura fallida no debería hacer desaparecer un token de la lista
+      const fallidos = results.filter(r => r.bal === null).map(r => r.address);
+      if(fallidos.length){
+        const reintento = await readTokenInBatches(fallidos, 8);
+        const porDir = new Map(reintento.map(r => [r.address, r]));
+        results = results.map(r => (r.bal === null && porDir.has(r.address)) ? porDir.get(r.address) : r);
+      }
+
       const withBalance = results.filter(r => r.bal !== null && r.bal > 0n);
 
       listEl.innerHTML = `<div class="empty-state">Buscando precios (${withBalance.length} tokens con saldo)…</div>`;
