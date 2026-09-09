@@ -1276,8 +1276,8 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b31-portada-' + new Date().toISOString().slice(0,16);
-  const BUZZ_APP_ID   = 'app_1db094a73d41f2b4fda27d1a6f45373f';
+  const BUILD_ID = 'buzz-b32-appid-' + new Date().toISOString().slice(0,16);
+  const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
   const ZORP_TOKEN     = '0xaB841a1E0cC65A3cC41b842C85E0cE51C87fb28E';
@@ -5460,7 +5460,7 @@
 <script type="module">
   try {
     const { MiniKit } = await import('https://cdn.jsdelivr.net/npm/@worldcoin/minikit-js/+esm');
-    MiniKit.install('app_1db094a73d41f2b4fda27d1a6f45373f');
+    MiniKit.install('app_815d5d92a5f26a91cfa25bc3a5bc3364');
     window._MiniKit = MiniKit;
     window._miniKitReady = true;
     window.__miniKitLoaded = true;
