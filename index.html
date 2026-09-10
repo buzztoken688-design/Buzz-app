@@ -1445,7 +1445,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b66-cotizapool-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b67-agregados-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1899,15 +1899,17 @@
       const r = await fetch(url);
       const d = await r.json();
       const eventos = Array.isArray(d && d.result) ? d.result : [];
-      const iniciales = new Set(
-        [WLD_ADDRESS, ZORP_TOKEN].concat(CURATED_TOKEN_ADDRESSES).map(a => a.toLowerCase())
-      );
+      // NO se filtra nada acá: esta lista alimenta el escaneo de saldos de
+      // Inicio, así que tiene que incluir TODO token que alguna vez se
+      // habilitó en el contrato. Antes se descartaban los que ya estaban en
+      // la lista curada del archivo, y eso dejaba afuera a los que están en
+      // esa lista pero nunca se cargaron en el contrato (o al revés).
       const salida = [];
       eventos.forEach(ev => {
         const t = ev.topics || [];
         if(t.length < 2) return;
         const token = ('0x' + t[1].slice(26)).toLowerCase();
-        if(iniciales.has(token) || salida.indexOf(token) !== -1) return;
+        if(salida.indexOf(token) !== -1) return;
         salida.push(token);
       });
       agregadosCache = salida;
@@ -2746,6 +2748,8 @@
         [WLD_ADDRESS, ZORP_TOKEN].concat(CURATED_TOKEN_ADDRESSES).map(a => a.toLowerCase())
       );
 
+      // acá sí conviene esconder la carga inicial: son los que cargaste vos
+      // de una sola vez, no los que la gente agregó pagando
       const vistos = new Set();
       eventos.forEach(ev => {
         const t = ev.topics || [];
