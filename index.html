@@ -1445,7 +1445,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b62-orden-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b66-cotizapool-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1456,7 +1456,7 @@
   // Paneles rojos con el detalle técnico del error. Se dejan APAGADOS para
   // que el usuario no vea nada de esto; poner en true cuando haya que
   // diagnosticar algo y el detalle vuelve a aparecer abajo del botón.
-  const DIAG_ERRORES = false;
+  const DIAG_ERRORES = true;   // TEMPORAL: prendido para diagnosticar los swaps que fallan
 
   const BUZZ_SEND = '0xe4d51B25463c35a1DD7F1e73913562224e82e35b';
   // Permit2 de Uniswap, misma dirección en todas las redes. World App ya
@@ -3025,13 +3025,32 @@
     try{
       const p = await getReadProvider();
       const factory = new ethers.Contract(UNISWAP_V3_FACTORY, V3_FACTORY_ABI, p);
-      for(const fee of FEE_TIERS){
+
+      // Para un mismo par pueden existir VARIOS pools, uno por cada fee tier,
+      // y varios suelen estar vacíos. Quedarse con el primero que exista hace
+      // que el swap revierta cuando ese pool no tiene liquidez. Por eso se
+      // consultan todos y se elige el que más liquidez real tenga.
+      const POOL_ABI = ['function liquidity() view returns (uint128)'];
+      let mejorFee = null, mejorLiq = 0n;
+
+      const resultados = await Promise.all(FEE_TIERS.map(async (fee) => {
         try{
           const pool = await factory.getPool(tokenA, tokenB, fee);
-          if(pool && pool !== ethers.ZeroAddress){
-            return { type: 'v3', poolFee: fee };
-          }
-        }catch(e){ /* seguir probando */ }
+          if(!pool || pool === ethers.ZeroAddress) return null;
+          let liq = 0n;
+          try{
+            liq = await new ethers.Contract(pool, POOL_ABI, p).liquidity();
+          }catch(e){ /* si no responde, cuenta como vacío */ }
+          return { fee, liq };
+        }catch(e){ return null; }
+      }));
+
+      resultados.forEach(r => {
+        if(r && r.liq > mejorLiq){ mejorLiq = r.liq; mejorFee = r.fee; }
+      });
+
+      if(mejorFee !== null && mejorLiq > 0n){
+        return { type: 'v3', poolFee: mejorFee };
       }
     }catch(e){ /* sin RPC, seguir a V2 */ }
 
@@ -3131,6 +3150,34 @@
     quoteState.poolFee = route.poolFee;
     quoteState.worldSwap = route.worldSwap || false;
 
+    // ------------------------------------------------------------
+    //  PRIMERO se le pregunta al POOL, no a DexScreener.
+    //  Los precios en dólares son planos: no saben cuánta liquidez hay,
+    //  así que en un pool chico sobreestiman lo que vas a recibir y el
+    //  mínimo queda inalcanzable. Cuanto más grande el monto, peor.
+    //  El Quoter de Uniswap (o getAmountsOut en V2) devuelve exactamente
+    //  lo que da el pool para ESE monto, con impacto de precio incluido.
+    // ------------------------------------------------------------
+    try{
+      const decIn  = fromToken.decimals != null ? Number(fromToken.decimals) : 18;
+      const decOut = toToken.decimals   != null ? Number(toToken.decimals)   : 18;
+      const limpio = truncateDecimals(String(document.getElementById('fromAmount').value).replace(',', '.'), decIn);
+      const entrada = ethers.parseUnits(limpio, decIn);
+      const salida  = await cotizarEnCadena(route, fromToken.address.toLowerCase(),
+                                            toToken.address.toLowerCase(), entrada);
+      if(salida && salida > 0n){
+        const bruto = parseFloat(ethers.formatUnits(salida, decOut));
+        const neto  = bruto * (1 - 50/10000);        // menos la comisión del 0,50%
+        quoteState.noRoute   = false;
+        quoteState.outAmount = neto;
+        quoteState.deCadena  = true;                 // vino del pool: el mínimo puede ser ajustado
+        toAmountEl.value = trimNum(neto);
+        updateSwapButton();
+        return;
+      }
+    }catch(e){ /* si el pool no cotiza, se sigue con los precios en dólares */ }
+    quoteState.deCadena = false;
+
     if(!priceFrom || !priceTo){
       // sin precio en dólares no quiere decir sin pool: se le pregunta a la cadena
       try{
@@ -3209,11 +3256,25 @@
     try{
       showToast('Preparando swap…');
       const cleanAmountStr = truncateDecimals(amountStr.replace(',', '.'), fromToken.decimals);
-      const amountWei = ethers.parseUnits(cleanAmountStr, fromToken.decimals);
+      let amountWei = ethers.parseUnits(cleanAmountStr, fromToken.decimals);
 
-      // slippage 20% (temporal, para diagnosticar si el margen de 5% era muy ajustado
-      // frente al desfasaje de DexScreener respecto al precio real del pool)
-      const minOut = quoteState.outAmount * 0.80;
+      // El saldo que se muestra viene redondeado, así que al apretar MAX el
+      // monto podía quedar unas milésimas POR ENCIMA del saldo real y la
+      // transacción revertía. Se relee el saldo exacto de la cadena y, si
+      // hace falta, se recorta.
+      try{
+        const prov = await getReadProvider();
+        const tk = new ethers.Contract(fromToken.address, ERC20_ABI, prov);
+        const saldoReal = await tk.balanceOf(userAddress);
+        if(amountWei > saldoReal) amountWei = saldoReal;
+        if(amountWei === 0n){ showToast('No tenés saldo de ' + fromToken.symbol, true); return; }
+      }catch(e){ /* si no se puede leer, se sigue con lo escrito */ }
+
+      // Si la cotización salió del pool, ya trae el impacto de precio adentro
+      // y alcanza con un margen chico. Si salió de precios en dólares, hay que
+      // dejar mucho más aire porque no contemplan la profundidad del pool.
+      const margen = quoteState.deCadena ? 0.97 : 0.80;
+      const minOut = quoteState.outAmount * margen;
       const amountOutMin = ethers.parseUnits(minOut.toFixed(Number(toToken.decimals) > 18 ? 18 : Number(toToken.decimals)), toToken.decimals);
 
       // 1) approve del monto COMPLETO al contrato BuzzSwapGeneric (él descuenta su comisión adentro)
