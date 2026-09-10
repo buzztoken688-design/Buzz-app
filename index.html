@@ -1216,26 +1216,13 @@
         <div class="empty-state">Próximamente</div>
       </div>
 
-      <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="misiones" alt="">Misiones</div>
+      <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="tendencias" alt="">Historial</div>
       <div class="card">
-        <div class="card-title"><img class="icimg" data-ic="racha" alt="">Racha diaria</div>
-        <div class="empty-state">Próximamente</div>
-      </div>
-      <div class="missions-card card">
-        <div class="m-ic"><img data-ic="inicio" alt=""></div>
-        <div class="m-info">
-          <div class="m-title">Seguir a BUZZ en X</div>
-          <div class="m-reward">+80 $ZORP</div>
+        <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span style="display:flex; align-items:center;"><img class="icimg" data-ic="swap" alt="">Tus movimientos</span>
+          <button class="mini-add" id="btnHistorial" onclick="cargarHistorial()">↻</button>
         </div>
-        <button class="m-btn">Ir</button>
-      </div>
-      <div class="missions-card card">
-        <div class="m-ic"><img data-ic="enviar" alt=""></div>
-        <div class="m-info">
-          <div class="m-title">Unirte al Telegram</div>
-          <div class="m-reward">+80 $ZORP</div>
-        </div>
-        <button class="m-btn">Ir</button>
+        <div id="listaHistorial"><div class="empty-state">Tocá ↻ para cargar</div></div>
       </div>
     </section>
 
@@ -1453,7 +1440,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b68-banners-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b69-historial-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2730,6 +2717,121 @@
       row.appendChild(b);
       lista.appendChild(row);
     });
+  }
+
+  // ============================================================
+  //  HISTORIAL DE MOVIMIENTOS
+  //  Sale de los eventos que emite el propio contrato de swap:
+  //  SwapV3 y SwapV2 guardan quién operó, qué entregó, qué recibió
+  //  y cuánto pagó de comisión. Se filtra por la wallet del usuario
+  //  usando el segundo campo indexado.
+  // ============================================================
+  const TOPIC_SWAP_V3 = '0x34426158fee2b2d502ca105e3a4399bda89c90eafff049bf22bdceda265272ba';
+  const TOPIC_SWAP_V2 = '0xe54093d3a84c861cbc0845635a58026e7f13dbb995cf821cdd7a509d0c664313';
+  const simboloCache = {};
+
+  async function simboloDe(addr){
+    const a = addr.toLowerCase();
+    if(a in simboloCache) return simboloCache[a];
+    // primero se busca entre los que la app ya conoce, para no ir a la cadena
+    const conocido = (walletTokens.concat(KNOWN_TOKENS)).find(t => t.address && t.address.toLowerCase() === a);
+    if(conocido && conocido.symbol){ simboloCache[a] = conocido.symbol; return conocido.symbol; }
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(a, ERC20_ABI, p);
+      const [sim, dec] = await Promise.all([c.symbol(), c.decimals()]);
+      simboloCache[a] = sim; simboloCache[a + ':dec'] = Number(dec);
+      return sim;
+    }catch(e){ simboloCache[a] = '?'; return '?'; }
+  }
+  function decimalesDe(addr){
+    const a = addr.toLowerCase();
+    if((a + ':dec') in simboloCache) return simboloCache[a + ':dec'];
+    const conocido = (walletTokens.concat(KNOWN_TOKENS)).find(t => t.address && t.address.toLowerCase() === a);
+    return (conocido && conocido.decimals != null) ? Number(conocido.decimals) : 18;
+  }
+
+  async function cargarHistorial(){
+    const cont = document.getElementById('listaHistorial');
+    const btn  = document.getElementById('btnHistorial');
+    if(!userAddress){ cont.innerHTML = '<div class="empty-state">Conectá tu wallet primero</div>'; return; }
+    if(btn){ btn.textContent = '…'; btn.style.opacity = '.6'; }
+    cont.innerHTML = '<div class="empty-state">Buscando…</div>';
+
+    const miTopic = '0x' + userAddress.toLowerCase().replace('0x','').padStart(64, '0');
+    try{
+      const url = (topic0) => EXPLORER_API +
+        '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+        '&address=' + BUZZ_SWAP +
+        '&topic0=' + topic0 +
+        '&topic1=' + miTopic +
+        '&topic0_1_opr=and';
+
+      const [r3, r2] = await Promise.all([
+        fetch(url(TOPIC_SWAP_V3)).then(r => r.json()).catch(() => null),
+        fetch(url(TOPIC_SWAP_V2)).then(r => r.json()).catch(() => null)
+      ]);
+
+      const crudos = []
+        .concat(Array.isArray(r3 && r3.result) ? r3.result : [])
+        .concat(Array.isArray(r2 && r2.result) ? r2.result : []);
+
+      if(!crudos.length){
+        cont.innerHTML = '<div class="empty-state">Todavía no hiciste ningún swap</div>';
+        return;
+      }
+
+      // En los dos eventos SOLO el usuario está indexado; los tokens y los
+      // montos viajan en `data`, uno atrás de otro en palabras de 32 bytes:
+      //   SwapV3: tokenIn, tokenOut, amountIn, amountOut, comision
+      //   SwapV2: tokenIn, tokenOut, amountIn, comision
+      const movs = crudos.map(ev => {
+        const datos = (ev.data || '0x').slice(2);
+        const palabra = (i) => datos.length >= (i+1)*64 ? datos.slice(i*64, (i+1)*64) : null;
+        const dir = (w) => w ? ('0x' + w.slice(24)).toLowerCase() : null;
+        const num = (w) => w ? BigInt('0x' + w) : 0n;
+        return {
+          tokenIn:  dir(palabra(0)),
+          tokenOut: dir(palabra(1)),
+          entrada:  num(palabra(2)),
+          cuando:   parseInt(ev.timeStamp || '0', 16) || 0,
+          hash:     ev.transactionHash
+        };
+      }).filter(m => m.tokenIn && m.tokenOut && m.tokenIn !== '0x' && m.tokenOut !== '0x');
+
+      movs.sort((a, b) => b.cuando - a.cuando);
+      const ultimos = movs.slice(0, 25);
+
+      // símbolos de todos los tokens que aparecen
+      const dirs = new Set();
+      ultimos.forEach(m => { dirs.add(m.tokenIn); dirs.add(m.tokenOut); });
+      await Promise.all([...dirs].map(simboloDe));
+
+      const wld = WLD_ADDRESS.toLowerCase();
+      cont.innerHTML = ultimos.map(m => {
+        const esCompra = m.tokenIn === wld;
+        const simIn  = simboloCache[m.tokenIn]  || '?';
+        const simOut = simboloCache[m.tokenOut] || '?';
+        const montoIn = trimNum(parseFloat(ethers.formatUnits(m.entrada, decimalesDe(m.tokenIn))));
+        const fecha = m.cuando
+          ? new Date(m.cuando * 1000).toLocaleDateString('es', {day:'2-digit', month:'2-digit'}) +
+            ' ' + new Date(m.cuando * 1000).toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})
+          : '';
+        return '<div class="token-row">' +
+          '<div class="tk-info">' +
+            '<div class="tk-name">' + (esCompra ? 'Compraste ' + esc(simOut) : 'Vendiste ' + esc(simIn)) + '</div>' +
+            '<div class="tk-sub">' + esc(montoIn) + ' ' + esc(simIn) + ' → ' + esc(simOut) + '</div>' +
+          '</div>' +
+          '<div style="text-align:right; flex:0 0 auto;">' +
+            '<div class="tk-sub">' + esc(fecha) + '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }catch(e){
+      cont.innerHTML = '<div class="empty-state">No se pudo leer el historial</div>';
+    }finally{
+      if(btn){ btn.textContent = '↻'; btn.style.opacity = ''; }
+    }
   }
 
   async function adminBuscar(){
@@ -5854,8 +5956,7 @@
       const feeTxt = fee != null ? trimNum(ethers.formatUnits(fee, 18)) + ' WLD' : '6 WLD (no se pudo leer)';
       el.innerHTML =
         'Costo de creación: <b>' + (gratis ? 'gratis (es tu primer token)' : feeTxt) + '</b><br>' +
-        'Suministro: <b>1.000.000.000</b> · gradúa a Uniswap V3 a los <b>1500 WLD</b><br>' +
-        (total != null ? 'Tokens lanzados hasta ahora: <b>' + total.toString() + '</b>' : '');
+        'Suministro: <b>1.000.000.000</b> · gradúa a Uniswap V3 a los <b>1500 WLD</b>';
       renderCrearResumen();
     }catch(e){
       el.textContent = 'No se pudo leer la factory: ' + (e && e.message ? e.message : e);
