@@ -1213,7 +1213,8 @@
 
       <div class="card" style="border-color:var(--buzz-dim);">
         <div class="card-title"><img class="icimg" data-ic="racha" alt="">Reclamo diario</div>
-        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:4px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+          <img id="claimLogo" alt="" style="width:34px; height:34px; border-radius:50%; object-fit:cover; display:none;">
           <div style="font-size:26px; font-weight:800;" id="claimMonto">—</div>
           <div style="font-size:12px; color:var(--text-faint);">BUZZ</div>
         </div>
@@ -1224,11 +1225,28 @@
 
       <div class="card">
         <div class="card-title"><img class="icimg" data-ic="regalo" alt="">Invitá y ganá</div>
-        <div class="crear-hint" style="margin-bottom:10px;">
-          Cuando alguien entra con tu enlace, cobran los dos.
+
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <div style="flex:1; background:var(--panel-2); border:1px solid var(--border);
+                      border-radius:12px; padding:10px; text-align:center;">
+            <div style="font-size:18px; font-weight:800; color:var(--buzz);" id="refPremioTuyo">—</div>
+            <div style="font-size:9.5px; color:var(--text-faint); letter-spacing:.5px;">PARA VOS</div>
+          </div>
+          <div style="flex:1; background:var(--panel-2); border:1px solid var(--border);
+                      border-radius:12px; padding:10px; text-align:center;">
+            <div style="font-size:18px; font-weight:800; color:var(--buzz);" id="refPremioAmigo">—</div>
+            <div style="font-size:9.5px; color:var(--text-faint); letter-spacing:.5px;">PARA TU AMIGO</div>
+          </div>
+        </div>
+
+        <div class="crear-hint" style="margin-bottom:12px; line-height:1.65;">
+          Copiá tu enlace y pasáselo a quien quieras. Cuando esa persona lo abra
+          y conecte su wallet, <b>el premio se acredita solo</b>: no tiene que
+          escribir tu nombre ni buscar nada.<br>
+          <span style="color:var(--text-faint);">Se paga una vez por persona, la primera vez que entra.</span>
           <span id="refConteo"></span>
         </div>
-        <button class="btn secondary" onclick="compartirInvitacion()">📤 Compartir mi enlace</button>
+        <button class="btn secondary" onclick="compartirInvitacion()">📤 Copiar mi enlace</button>
         <div class="logo-info" id="refEstado" style="margin-top:8px; min-height:16px;"></div>
       </div>
 
@@ -1459,7 +1477,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b72-linkx-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b74-invitar-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2779,6 +2797,7 @@
   //  solo muestra lo que él dice y le manda las transacciones.
   // ============================================================
   const BUZZ_CLAIM = '0x6bFa319Cd1B5e014C1F1d8e6b826bccb78795206';
+  const BUZZ_TOKEN = '0xf9f44AcEA8d3f7f34FF9766cbBe5293f11b719fE';
   const LINK_TELEGRAM = 'https://t.me/BuzzComunity';
   const LINK_X = 'https://x.com/buzztoken_world';
   const LINK_APP = 'https://world.org/mini-app?app_id=app_815d5d92a5f26a91cfa25bc3a5bc3364';
@@ -2796,7 +2815,9 @@
     'function misiones(uint256) view returns (string, uint256, bool)',
     'function misionesDeUsuario(address) view returns (bool[])',
     'function reclamarMision(uint256)',
-    'function reservaDisponible() view returns (uint256)'
+    'function reservaDisponible() view returns (uint256)',
+    'function premioInvitador() view returns (uint256)',
+    'function premioInvitado() view returns (uint256)'
   ];
 
   function abrirTelegram(){ window.open(LINK_TELEGRAM, '_blank'); }
@@ -2870,75 +2891,101 @@
 
   // ---------- pintar el estado de premios ----------
   async function cargarPremios(){
-    if(!userAddress) return;
-    const elMonto  = document.getElementById('claimMonto');
-    const elRacha  = document.getElementById('claimRacha');
-    const btn      = document.getElementById('btnClaim');
-    const elRef    = document.getElementById('refConteo');
-    const lista    = document.getElementById('listaMisiones');
-    if(!elMonto) return;
+    const elMonto = document.getElementById('claimMonto');
+    if(!elMonto || !userAddress) return;
+    const elRacha = document.getElementById('claimRacha');
+    const btn     = document.getElementById('btnClaim');
+    const elRef   = document.getElementById('refConteo');
+    const lista   = document.getElementById('listaMisiones');
 
+    // el logo del token, de donde esté disponible
     try{
-      const p = await getReadProvider();
-      const c = new ethers.Contract(BUZZ_CLAIM, CLAIM_ABI, p);
+      const logo = await getGeckoIcon(BUZZ_TOKEN);
+      const img = document.getElementById('claimLogo');
+      if(img && logo){ img.src = logo; img.style.display = ''; }
+    }catch(e){}
 
-      const [puede, falta, racha, monto, refs, cuantas, hechas] = await Promise.all([
-        c.puedeReclamar(userAddress).catch(()=>false),
-        c.faltaParaReclamar(userAddress).catch(()=>0n),
-        c.rachaDias(userAddress).catch(()=>0n),
-        c.montoDelDia(userAddress).catch(()=>0n),
-        c.totalReferidos(userAddress).catch(()=>0n),
-        c.cantidadMisiones().catch(()=>0n),
-        c.misionesDeUsuario(userAddress).catch(()=>[])
-      ]);
-
-      elMonto.textContent = trimNum(parseFloat(ethers.formatUnits(monto, 18)));
-      const dias = Number(racha);
-      elRacha.textContent = dias > 0
-        ? 'Llevás ' + dias + ' día(s) seguidos. A los 10 sube, a los 15 sube más.'
-        : 'Entrá todos los días: a los 10 seguidos cobrás más, y a los 15 todavía más.';
-
-      if(puede){
-        btn.disabled = false;
-        btn.textContent = 'Reclamar';
-      }else{
-        btn.disabled = true;
-        const seg = Number(falta);
-        const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
-        btn.textContent = 'Volvé en ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm');
-      }
-
-      if(elRef) elRef.textContent = Number(refs) > 0 ? 'Ya invitaste a ' + Number(refs) + '.' : '';
-
-      // ---- misiones ----
-      const total = Number(cuantas);
-      if(!total){
-        lista.innerHTML = '<div class="empty-state">Todavía no hay misiones</div>';
-      }else{
-        const datos = [];
-        for(let i = 0; i < total; i++){
-          try{
-            const m = await c.misiones(i);
-            datos.push({ id:i, nombre:m[0], premio:m[1], activa:m[2],
-                         hecha: Array.isArray(hechas) && hechas[i] === true });
-          }catch(e){}
-        }
-        lista.innerHTML = datos.filter(m => m.activa).map(m =>
-          '<div class="missions-card card">' +
-            '<div class="m-ic"><img data-ic="misiones" alt=""></div>' +
-            '<div class="m-info">' +
-              '<div class="m-title">' + esc(m.nombre) + '</div>' +
-              '<div class="m-reward">+' + trimNum(parseFloat(ethers.formatUnits(m.premio, 18))) + ' BUZZ</div>' +
-            '</div>' +
-            (m.hecha
-              ? '<button class="m-btn" disabled>✓</button>'
-              : '<button class="m-btn" onclick="hacerMision(' + m.id + ', \'' + esc(m.nombre).replace(/'/g, "") + '\')">Ir</button>') +
-          '</div>').join('');
-        if(typeof pintarIconos === 'function') pintarIconos();
-      }
+    let p, c;
+    try{
+      p = await getReadProvider();
+      c = new ethers.Contract(BUZZ_CLAIM, CLAIM_ABI, p);
     }catch(e){
-      elRacha.textContent = 'No se pudo leer el contrato de premios';
+      elRacha.textContent = 'No se pudo conectar con la cadena';
+      lista.innerHTML = '<div class="empty-state">No se pudieron cargar las misiones</div>';
+      return;
     }
+
+    // Cada lectura va por su cuenta: si una falla, las demás siguen.
+    // Antes iban todas juntas y un solo error dejaba la pantalla a medias.
+    const leer = async (fn, porDefecto) => { try{ return await fn(); }catch(e){ return porDefecto; } };
+
+    const monto = await leer(() => c.montoDelDia(userAddress), null);
+    elMonto.textContent = monto != null ? trimNum(parseFloat(ethers.formatUnits(monto, 18))) : '—';
+
+    const racha = Number(await leer(() => c.rachaDias(userAddress), 0n));
+    elRacha.textContent = racha > 0
+      ? 'Llevás ' + racha + ' día(s) seguidos. A los 10 sube, a los 15 sube más.'
+      : 'Entrá todos los días: a los 10 seguidos cobrás más, y a los 15 todavía más.';
+
+    const puede = await leer(() => c.puedeReclamar(userAddress), null);
+    if(puede === true){
+      btn.disabled = false; btn.textContent = 'Reclamar';
+    }else if(puede === false){
+      const seg = Number(await leer(() => c.faltaParaReclamar(userAddress), 0n));
+      const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
+      btn.disabled = true;
+      btn.textContent = 'Volvé en ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm');
+    }
+
+    const refs = Number(await leer(() => c.totalReferidos(userAddress), 0n));
+    if(elRef) elRef.textContent = refs > 0 ? ' Ya invitaste a ' + refs + '.' : '';
+
+    // los montos salen del contrato, así que si los cambiás en Remix
+    // la pantalla se actualiza sola
+    const pTuyo  = await leer(() => c.premioInvitador(), null);
+    const pAmigo = await leer(() => c.premioInvitado(), null);
+    const elTuyo  = document.getElementById('refPremioTuyo');
+    const elAmigo = document.getElementById('refPremioAmigo');
+    if(elTuyo)  elTuyo.textContent  = pTuyo  != null ? '+' + trimNum(parseFloat(ethers.formatUnits(pTuyo, 18))) : '—';
+    if(elAmigo) elAmigo.textContent = pAmigo != null ? '+' + trimNum(parseFloat(ethers.formatUnits(pAmigo, 18))) : '—';
+
+    // ---------- misiones ----------
+    const cuantas = Number(await leer(() => c.cantidadMisiones(), 0n));
+    if(!cuantas){
+      lista.innerHTML = '<div class="empty-state">Todavía no hay misiones</div>';
+      return;
+    }
+    const hechas = await leer(() => c.misionesDeUsuario(userAddress), []);
+
+    const filas = [];
+    for(let i = 0; i < cuantas; i++){
+      const m = await leer(() => c.misiones(i), null);
+      if(!m) continue;
+      const nombre = m[0], premio = m[1], activa = m[2];
+      if(!activa) continue;
+      const hecha = Array.isArray(hechas) && hechas[i] === true;
+      filas.push(
+        '<div class="missions-card card">' +
+          '<div class="m-ic"><img data-ic="misiones" alt=""></div>' +
+          '<div class="m-info">' +
+            '<div class="m-title">' + esc(nombre) + '</div>' +
+            '<div class="m-reward">+' + trimNum(parseFloat(ethers.formatUnits(premio, 18))) + ' BUZZ</div>' +
+          '</div>' +
+          (hecha
+            ? '<button class="m-btn" disabled>✓ Hecha</button>'
+            : '<button class="m-btn" data-mision="' + i + '">Ir</button>') +
+        '</div>');
+    }
+
+    lista.innerHTML = filas.length ? filas.join('')
+                                   : '<div class="empty-state">Todavía no hay misiones activas</div>';
+
+    // los botones se enganchan acá, sin meter comillas dentro del HTML
+    lista.querySelectorAll('[data-mision]').forEach(b => {
+      b.onclick = () => hacerMision(Number(b.dataset.mision),
+                                    b.closest('.missions-card').querySelector('.m-title').textContent);
+    });
+    if(typeof pintarIconos === 'function') pintarIconos();
   }
 
   async function reclamarDiario(){
