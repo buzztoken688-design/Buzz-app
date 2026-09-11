@@ -1211,10 +1211,29 @@
         <div class="logo-info" id="adminOut" style="margin-top:8px; min-height:16px;"></div>
       </div>
 
+      <div class="card" style="border-color:var(--buzz-dim);">
+        <div class="card-title"><img class="icimg" data-ic="racha" alt="">Reclamo diario</div>
+        <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:4px;">
+          <div style="font-size:26px; font-weight:800;" id="claimMonto">—</div>
+          <div style="font-size:12px; color:var(--text-faint);">BUZZ</div>
+        </div>
+        <div class="crear-hint" id="claimRacha" style="margin-bottom:12px;">—</div>
+        <button class="btn" id="btnClaim" onclick="reclamarDiario()">Reclamar</button>
+        <div class="logo-info" id="claimEstado" style="margin-top:8px; min-height:16px;"></div>
+      </div>
+
       <div class="card">
         <div class="card-title"><img class="icimg" data-ic="regalo" alt="">Invitá y ganá</div>
-        <div class="empty-state">Próximamente</div>
+        <div class="crear-hint" style="margin-bottom:10px;">
+          Cuando alguien entra con tu enlace, cobran los dos.
+          <span id="refConteo"></span>
+        </div>
+        <button class="btn secondary" onclick="compartirInvitacion()">📤 Compartir mi enlace</button>
+        <div class="logo-info" id="refEstado" style="margin-top:8px; min-height:16px;"></div>
       </div>
+
+      <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="misiones" alt="">Misiones</div>
+      <div id="listaMisiones"><div class="empty-state">Cargando…</div></div>
 
       <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="tendencias" alt="">Historial</div>
       <div class="card">
@@ -1440,7 +1459,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b69-historial-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b72-linkx-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1712,6 +1731,9 @@
     document.getElementById('walletAddrShort').textContent = shortAddr(userAddress);
     mostrarPanelAdmin();
     cargarMisTokens();
+    detectarInvitacion();
+    cargarPremios();
+    registrarInvitacionAutomatica();
     document.getElementById('receiveAddr').textContent = userAddress;
     document.getElementById('profileUser').textContent = username ? '@'+username : 'Sin username';
     document.getElementById('profileAddr').textContent = userAddress;
@@ -2749,6 +2771,225 @@
     if((a + ':dec') in simboloCache) return simboloCache[a + ':dec'];
     const conocido = (walletTokens.concat(KNOWN_TOKENS)).find(t => t.address && t.address.toLowerCase() === a);
     return (conocido && conocido.decimals != null) ? Number(conocido.decimals) : 18;
+  }
+
+  // ============================================================
+  //  PREMIOS: reclamo diario, misiones y referidos
+  //  Todo contra BuzzClaim. El contrato es el que decide: la app
+  //  solo muestra lo que él dice y le manda las transacciones.
+  // ============================================================
+  const BUZZ_CLAIM = '0x6bFa319Cd1B5e014C1F1d8e6b826bccb78795206';
+  const LINK_TELEGRAM = 'https://t.me/BuzzComunity';
+  const LINK_X = 'https://x.com/buzztoken_world';
+  const LINK_APP = 'https://world.org/mini-app?app_id=app_815d5d92a5f26a91cfa25bc3a5bc3364';
+
+  const CLAIM_ABI = [
+    'function reclamarDiario()',
+    'function puedeReclamar(address) view returns (bool)',
+    'function faltaParaReclamar(address) view returns (uint256)',
+    'function rachaDias(address) view returns (uint256)',
+    'function montoDelDia(address) view returns (uint256)',
+    'function registrarInvitador(address)',
+    'function invitadoPor(address) view returns (address)',
+    'function totalReferidos(address) view returns (uint256)',
+    'function cantidadMisiones() view returns (uint256)',
+    'function misiones(uint256) view returns (string, uint256, bool)',
+    'function misionesDeUsuario(address) view returns (bool[])',
+    'function reclamarMision(uint256)',
+    'function reservaDisponible() view returns (uint256)'
+  ];
+
+  function abrirTelegram(){ window.open(LINK_TELEGRAM, '_blank'); }
+
+  // ---------- el enlace de invitación ----------
+  // World App NO le pasa a la mini app los parámetros sueltos de la URL:
+  // lo único que reenvía es lo que va dentro de `path`. Por eso el ref
+  // viaja codificado ahí adentro y no como &ref= suelto.
+  function miEnlaceDeReferido(){
+    if(!userAddress) return null;
+    return LINK_APP + '&path=' + encodeURIComponent('?ref=' + userAddress);
+  }
+
+  async function compartirInvitacion(){
+    const link = miEnlaceDeReferido();
+    if(!link){ showToast('Conectá tu wallet primero', true); return; }
+    const texto = '🐝 Sumate a BuzzWallet y reclamá $BUZZ todos los días.\n\n' +
+                  'Entrá con este enlace y conectá tu wallet: tu bono se registra solo.\n\n' + link;
+    try{
+      if(navigator.share){ await navigator.share({ text: texto }); return; }
+      await navigator.clipboard.writeText(texto);
+      showToast('Enlace copiado');
+    }catch(e){
+      showToast('Copiá el enlace: ' + link, true);
+    }
+  }
+
+  // ---------- detectar que llegó con una invitación ----------
+  let invitadorPendiente = null;
+
+  function detectarInvitacion(){
+    try{
+      // puede llegar como ?ref=0x… o codificado dentro de path (ref%3D0x…)
+      const m = window.location.href.match(/(?:ref|code)(?:%3D|=)(0x[a-fA-F0-9]{40})/i);
+      if(!m) return;
+      const ref = m[1];
+      if(userAddress && ref.toLowerCase() === userAddress.toLowerCase()) return;
+      invitadorPendiente = ref;
+    }catch(e){ /* si el enlace viene raro, no pasa nada */ }
+  }
+
+  // Registra al invitador apenas se conecta la wallet: el invitado no
+  // tiene que escribir ni buscar nada, solo confirma en World App.
+  async function registrarInvitacionAutomatica(){
+    if(!invitadorPendiente || !userAddress) return;
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(BUZZ_CLAIM, CLAIM_ABI, p);
+      const actual = await c.invitadoPor(userAddress);
+      if(actual && actual !== ethers.ZeroAddress){ invitadorPendiente = null; return; }
+    }catch(e){ /* si no se puede leer, se intenta igual */ }
+
+    const k = getMiniKit();
+    if(!k) return;
+    try{
+      showToast('Registrando tu invitación…');
+      const iface = new ethers.Interface(CLAIM_ABI);
+      const res = await k.sendTransaction({
+        chainId: CHAIN_ID,
+        transactions: [{ to: BUZZ_CLAIM, data: iface.encodeFunctionData('registrarInvitador', [invitadorPendiente]) }]
+      });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        invitadorPendiente = null;
+        showToast('🎁 Bono de bienvenida acreditado');
+        cargarPremios();
+      }
+    }catch(e){ /* si la rechaza, queda pendiente para el próximo ingreso */ }
+  }
+
+  // ---------- pintar el estado de premios ----------
+  async function cargarPremios(){
+    if(!userAddress) return;
+    const elMonto  = document.getElementById('claimMonto');
+    const elRacha  = document.getElementById('claimRacha');
+    const btn      = document.getElementById('btnClaim');
+    const elRef    = document.getElementById('refConteo');
+    const lista    = document.getElementById('listaMisiones');
+    if(!elMonto) return;
+
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(BUZZ_CLAIM, CLAIM_ABI, p);
+
+      const [puede, falta, racha, monto, refs, cuantas, hechas] = await Promise.all([
+        c.puedeReclamar(userAddress).catch(()=>false),
+        c.faltaParaReclamar(userAddress).catch(()=>0n),
+        c.rachaDias(userAddress).catch(()=>0n),
+        c.montoDelDia(userAddress).catch(()=>0n),
+        c.totalReferidos(userAddress).catch(()=>0n),
+        c.cantidadMisiones().catch(()=>0n),
+        c.misionesDeUsuario(userAddress).catch(()=>[])
+      ]);
+
+      elMonto.textContent = trimNum(parseFloat(ethers.formatUnits(monto, 18)));
+      const dias = Number(racha);
+      elRacha.textContent = dias > 0
+        ? 'Llevás ' + dias + ' día(s) seguidos. A los 10 sube, a los 15 sube más.'
+        : 'Entrá todos los días: a los 10 seguidos cobrás más, y a los 15 todavía más.';
+
+      if(puede){
+        btn.disabled = false;
+        btn.textContent = 'Reclamar';
+      }else{
+        btn.disabled = true;
+        const seg = Number(falta);
+        const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
+        btn.textContent = 'Volvé en ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm');
+      }
+
+      if(elRef) elRef.textContent = Number(refs) > 0 ? 'Ya invitaste a ' + Number(refs) + '.' : '';
+
+      // ---- misiones ----
+      const total = Number(cuantas);
+      if(!total){
+        lista.innerHTML = '<div class="empty-state">Todavía no hay misiones</div>';
+      }else{
+        const datos = [];
+        for(let i = 0; i < total; i++){
+          try{
+            const m = await c.misiones(i);
+            datos.push({ id:i, nombre:m[0], premio:m[1], activa:m[2],
+                         hecha: Array.isArray(hechas) && hechas[i] === true });
+          }catch(e){}
+        }
+        lista.innerHTML = datos.filter(m => m.activa).map(m =>
+          '<div class="missions-card card">' +
+            '<div class="m-ic"><img data-ic="misiones" alt=""></div>' +
+            '<div class="m-info">' +
+              '<div class="m-title">' + esc(m.nombre) + '</div>' +
+              '<div class="m-reward">+' + trimNum(parseFloat(ethers.formatUnits(m.premio, 18))) + ' BUZZ</div>' +
+            '</div>' +
+            (m.hecha
+              ? '<button class="m-btn" disabled>✓</button>'
+              : '<button class="m-btn" onclick="hacerMision(' + m.id + ', \'' + esc(m.nombre).replace(/'/g, "") + '\')">Ir</button>') +
+          '</div>').join('');
+        if(typeof pintarIconos === 'function') pintarIconos();
+      }
+    }catch(e){
+      elRacha.textContent = 'No se pudo leer el contrato de premios';
+    }
+  }
+
+  async function reclamarDiario(){
+    const k = getMiniKit();
+    if(!k){ showToast('MiniKit no disponible', true); return; }
+    const est = document.getElementById('claimEstado');
+    const btn = document.getElementById('btnClaim');
+    try{
+      btn.disabled = true;
+      est.textContent = 'Firmá en World App…';
+      const iface = new ethers.Interface(CLAIM_ABI);
+      const res = await k.sendTransaction({
+        chainId: CHAIN_ID,
+        transactions: [{ to: BUZZ_CLAIM, data: iface.encodeFunctionData('reclamarDiario', []) }]
+      });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        est.textContent = '';
+        showToast('🍯 Reclamado');
+        setTimeout(() => { cargarPremios(); loadBalances(); }, 1500);
+      }else{
+        est.textContent = 'No se pudo reclamar. Probá de nuevo.';
+        btn.disabled = false;
+      }
+    }catch(e){
+      est.textContent = (e && e.message) ? e.message : 'Falló el reclamo';
+      btn.disabled = false;
+    }
+  }
+
+  // Abre el enlace de la misión y después manda la transacción para cobrarla.
+  async function hacerMision(id, nombre){
+    if(/telegram/i.test(nombre)) window.open(LINK_TELEGRAM, '_blank');
+    else if(/\bx\b|twitter/i.test(nombre)) window.open(LINK_X, '_blank');
+
+    const k = getMiniKit();
+    if(!k){ showToast('MiniKit no disponible', true); return; }
+    try{
+      const iface = new ethers.Interface(CLAIM_ABI);
+      const res = await k.sendTransaction({
+        chainId: CHAIN_ID,
+        transactions: [{ to: BUZZ_CLAIM, data: iface.encodeFunctionData('reclamarMision', [id]) }]
+      });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        showToast('🍯 Misión reclamada');
+        setTimeout(() => { cargarPremios(); loadBalances(); }, 1500);
+      }
+    }catch(e){ /* si la cancela, no pasa nada */ }
   }
 
   async function cargarHistorial(){
