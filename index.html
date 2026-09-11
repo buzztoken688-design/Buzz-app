@@ -756,6 +756,14 @@
   }
   .mini-add:active{background:var(--buzz); color:var(--ink);}
 
+  /* el relojito de arena mientras el usuario "completa" la misión */
+  .m-btn.esperando{opacity:.85;}
+  .m-btn .reloj{display:inline-block; animation:girarReloj 1.6s ease-in-out infinite;}
+  @keyframes girarReloj{
+    0%,55% {transform:rotate(0deg);}
+    70%,100%{transform:rotate(180deg);}
+  }
+
   .crear-head{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
   .back-btn{
     background:var(--panel-2); border:1px solid var(--border); color:var(--text);
@@ -1251,6 +1259,7 @@
       </div>
 
       <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="misiones" alt="">Misiones</div>
+      <div class="logo-info" id="misionAviso" style="display:none; text-align:center; margin-bottom:8px; font-size:12.5px; color:var(--buzz);"></div>
       <div id="listaMisiones"><div class="empty-state">Cargando…</div></div>
 
       <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="tendencias" alt="">Historial</div>
@@ -1477,7 +1486,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b74-invitar-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b75-reloj-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3017,10 +3026,37 @@
     }
   }
 
-  // Abre el enlace de la misión y después manda la transacción para cobrarla.
+  // Abre el enlace de la misión y deja al usuario esperando unos segundos
+  // antes de poder cobrar. No verifica nada —el contrato tampoco puede—,
+  // pero obliga a quedarse en la pantalla en vez de tocar y cobrar al toque.
+  const ESPERA_MISION = 8000;   // milisegundos
+
   async function hacerMision(id, nombre){
+    const btn = document.querySelector('[data-mision="' + id + '"]');
+
     if(/telegram/i.test(nombre)) window.open(LINK_TELEGRAM, '_blank');
     else if(/\bx\b|twitter/i.test(nombre)) window.open(LINK_X, '_blank');
+
+    if(btn){
+      btn.disabled = true;
+      btn.classList.add('esperando');
+      btn.innerHTML = '<span class="reloj">⏳</span>';
+      btn.title = 'Completá la misión';
+    }
+    const aviso = document.getElementById('misionAviso');
+    if(aviso){
+      aviso.textContent = '⏳ Completá la misión…';
+      aviso.style.display = 'block';
+    }
+
+    await new Promise(r => setTimeout(r, ESPERA_MISION));
+
+    if(aviso) aviso.style.display = 'none';
+    if(btn){
+      btn.classList.remove('esperando');
+      btn.textContent = 'Cobrar';
+      btn.disabled = false;
+    }
 
     const k = getMiniKit();
     if(!k){ showToast('MiniKit no disponible', true); return; }
@@ -3035,8 +3071,12 @@
       if(ok){
         showToast('🍯 Misión reclamada');
         setTimeout(() => { cargarPremios(); loadBalances(); }, 1500);
+      }else if(btn){
+        btn.textContent = 'Ir';
       }
-    }catch(e){ /* si la cancela, no pasa nada */ }
+    }catch(e){
+      if(btn) btn.textContent = 'Ir';
+    }
   }
 
   async function cargarHistorial(){
