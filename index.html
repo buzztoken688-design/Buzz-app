@@ -756,6 +756,39 @@
   }
   .mini-add:active{background:var(--buzz); color:var(--ink);}
 
+  /* ---------- pools de staking ---------- */
+  .pool-fila{
+    background:var(--panel-2); border:1px solid var(--border);
+    border-radius:14px; padding:12px; margin-bottom:9px;
+  }
+  .pool-top{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+  .pool-top .tk-icon{width:34px; height:34px; font-size:14px; flex:0 0 auto;}
+  .pool-nom{flex:1; min-width:0;}
+  .pool-nom b{display:block; font-size:14px; font-weight:700;}
+  .pool-nom small{display:block; font-size:11px; color:var(--text-faint); margin-top:1px;}
+  .pool-apy{
+    flex:0 0 auto; background:rgba(255,193,7,.12); border:1px solid var(--buzz-dim);
+    color:var(--buzz); border-radius:999px; padding:4px 10px;
+    font-size:12px; font-weight:800; white-space:nowrap;
+  }
+  .pool-datos{display:flex; gap:8px; margin-bottom:9px;}
+  .pool-dato{
+    flex:1; background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:7px; text-align:center; min-width:0;
+  }
+  .pool-dato b{display:block; font-size:12.5px; font-weight:800;}
+  .pool-dato small{display:block; font-size:8.5px; color:var(--text-faint); letter-spacing:.5px; margin-top:1px;}
+  .pool-acciones{display:flex; gap:7px;}
+  .pool-acciones .btn{flex:1; padding:9px; font-size:12.5px; margin:0;}
+  .pool-mio{border-color:var(--buzz-dim);}
+
+  .rango-fila{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+  .rango-fila input[type=range]{flex:1; accent-color:var(--buzz);}
+  .rango-valor{
+    flex:0 0 auto; min-width:62px; text-align:right;
+    font-size:16px; font-weight:800; color:var(--buzz);
+  }
+
   /* el relojito de arena mientras el usuario "completa" la misión */
   .m-btn.esperando{opacity:.85;}
   .m-btn .reloj{display:inline-block; animation:girarReloj 1.6s ease-in-out infinite;}
@@ -1207,6 +1240,15 @@
         <div id="misTokensLista"></div>
       </div>
 
+      <div class="card" id="adminPoolsCard" style="display:none; border-color:var(--buzz-dim);">
+        <div class="card-title"><img class="icimg" data-ic="herramientas" alt="">Pools esperando aprobación</div>
+        <div class="crear-hint" style="margin-bottom:10px;">
+          Al aprobar, los 5.000 BUZZ del creador se queman. Al rechazar, se le
+          devuelve todo.
+        </div>
+        <div id="listaAdminPools"></div>
+      </div>
+
       <div class="card" id="adminCard" style="display:none; border-color:var(--buzz-dim);">
         <div class="card-title"><img class="icimg" data-ic="herramientas" alt="">Tokens que agregaron los usuarios</div>
         <div class="crear-hint" style="margin-bottom:10px;">
@@ -1217,6 +1259,30 @@
         <button class="btn secondary" id="btnAdminRefrescar" style="margin-top:12px;">Buscar</button>
         <button class="btn secondary" id="btnAdminCopiar" style="margin-top:8px; display:none;">Copiar todas</button>
         <div class="logo-info" id="adminOut" style="margin-top:8px; min-height:16px;"></div>
+      </div>
+
+      <div class="section-title" style="font-size:15px; margin-top:8px;">
+        <span style="font-size:17px; margin-right:6px;">🔒</span>Pools de staking
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+          <span>Bloqueá tokens y ganá</span>
+          <button class="mini-add" id="btnPools" onclick="cargarPools()">↻</button>
+        </div>
+        <div class="crear-hint" style="margin-bottom:10px;">
+          Bloqueás por el plazo del pool y ganás según su APY. Pasado el plazo
+          retirás cuando quieras, y si lo dejás sigue generando.
+        </div>
+        <div id="listaPools"><div class="empty-state">Tocá ↻ para cargar</div></div>
+        <button class="btn secondary" style="margin-top:10px;" onclick="abrirSolicitarPool()">
+          ➕ Abrir mi propio pool
+        </button>
+      </div>
+
+      <div class="card pool-mio" id="misPoolsCard" style="display:none;">
+        <div class="card-title"><img class="icimg" data-ic="panal" alt="">Pools que creaste</div>
+        <div id="listaMisPools"></div>
       </div>
 
       <div class="card" style="border-color:var(--buzz-dim);">
@@ -1411,6 +1477,49 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="poolModal">
+  <div class="modal" style="position:relative; max-height:88vh; overflow-y:auto;">
+    <div class="close-x" onclick="closeModal('poolModal')">✕</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title">Abrir un pool</div>
+    <div class="crear-hint" style="margin-bottom:14px;">
+      Depositás tu token como recompensa y elegís cuánto pagar por año.
+      Cuesta <b>5.000 BUZZ</b>, que se queman al aprobarse.
+      Mínimo de recompensa: <b>500.000</b> del token.
+    </div>
+
+    <div class="field-label">Dirección del token</div>
+    <input class="field" id="poolToken" placeholder="0x…" autocomplete="off"
+           autocapitalize="off" spellcheck="false">
+    <div class="logo-info" id="poolTokenEstado" style="margin-bottom:12px;">&nbsp;</div>
+
+    <div class="field-label">Nombre del pool</div>
+    <input class="field" id="poolNombre" placeholder="Ej: Staking de MITOKEN" autocomplete="off">
+
+    <div class="field-label" style="margin-top:12px;">APY anual</div>
+    <div class="rango-fila">
+      <input type="range" id="poolApy" min="1" max="300" value="30" step="1"
+             oninput="document.getElementById('poolApyVal').textContent = this.value + '%'">
+      <span class="rango-valor" id="poolApyVal">30%</span>
+    </div>
+
+    <div class="field-label">Días de bloqueo</div>
+    <div class="rango-fila">
+      <input type="range" id="poolDias" min="1" max="365" value="7" step="1"
+             oninput="document.getElementById('poolDiasVal').textContent = this.value + 'd'">
+      <span class="rango-valor" id="poolDiasVal">7d</span>
+    </div>
+
+    <div class="field-label">Recompensa a depositar</div>
+    <input class="field" id="poolRecompensa" placeholder="500000" inputmode="decimal">
+
+    <button class="btn" id="btnSolicitarPool" style="margin-top:16px;" onclick="solicitarPool()">
+      Solicitar pool
+    </button>
+    <div class="logo-info" id="poolOut" style="margin-top:10px; min-height:18px;"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="addTokenModal">
   <div class="modal" style="position:relative; max-height:88vh; overflow-y:auto;">
     <div class="close-x" onclick="closeModal('addTokenModal')">✕</div>
@@ -1486,7 +1595,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b75-reloj-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b76-pools-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1760,6 +1869,7 @@
     cargarMisTokens();
     detectarInvitacion();
     cargarPremios();
+    cargarPools();
     registrarInvitacionAutomatica();
     document.getElementById('receiveAddr').textContent = userAddress;
     document.getElementById('profileUser').textContent = username ? '@'+username : 'Sin username';
@@ -3079,6 +3189,364 @@
     }
   }
 
+
+  // ============================================================
+  //  POOLS DE STAKING
+  //  Todo sale de BuzzStaking: la app solo muestra lo que dice el
+  //  contrato y le manda las transacciones.
+  // ============================================================
+  const BUZZ_STAKING  = '0x44CeCD391aF683F34CFe3CD05b42334839518161';
+  const BUZZ_REGISTRO = '0x3fed1b1C5a9c776600dA77FBc50cF28B73D31fee';
+
+  const STAKING_ABI = [
+    'function cantidadPools() view returns (uint256)',
+    'function pools(uint256) view returns (address creador, address token, uint256 apyBps, uint256 diasBloqueo, uint256 recompensa, uint256 totalDepositado, uint256 acumuladoPorToken, uint256 ultimoCorte, uint256 buzzRetenido, uint8 estado, string nombre)',
+    'function depositos(uint256, address) view returns (uint256 monto, uint256 desbloqueaEn, uint256 acumuladoPagado, uint256 pendiente)',
+    'function gananciaDe(uint256, address) view returns (uint256)',
+    'function faltaDesbloqueo(uint256, address) view returns (uint256)',
+    'function pendientes() view returns (uint256[])',
+    'function costoAbrirPool() view returns (uint256)',
+    'function recompensaMinima() view returns (uint256)',
+    'function solicitarPool(address token, uint256 apyBps, uint256 diasBloqueo, uint256 recompensa, string nombre) returns (uint256)',
+    'function aprobarPool(uint256)',
+    'function rechazarPool(uint256)',
+    'function fondearPool(uint256, uint256)',
+    'function bloquear(uint256, uint256)',
+    'function retirar(uint256, uint256)',
+    'function cobrarGanancia(uint256)'
+  ];
+
+  const ESTADOS = ['Pendiente', 'Activo', 'Rechazado'];
+  let poolsCache = [];
+
+  function fmtDias(n){
+    n = Number(n);
+    if(n >= 365) return Math.round(n/365) + ' año(s)';
+    if(n >= 30)  return Math.round(n/30) + ' mes(es)';
+    return n + ' día(s)';
+  }
+  function fmtEspera(seg){
+    seg = Number(seg);
+    if(seg <= 0) return 'libre';
+    const d = Math.floor(seg/86400), h = Math.floor((seg%86400)/3600), m = Math.floor((seg%3600)/60);
+    if(d > 0) return d + 'd ' + h + 'h';
+    if(h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+  }
+
+  async function cargarPools(){
+    const cont = document.getElementById('listaPools');
+    const btn  = document.getElementById('btnPools');
+    if(!cont) return;
+    if(btn){ btn.textContent = '…'; btn.style.opacity = '.6'; }
+    cont.innerHTML = '<div class="empty-state">Buscando…</div>';
+
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(BUZZ_STAKING, STAKING_ABI, p);
+      const total = Number(await c.cantidadPools());
+
+      if(!total){
+        cont.innerHTML = '<div class="empty-state">Todavía no hay pools</div>';
+        return;
+      }
+
+      poolsCache = [];
+      for(let i = 0; i < total; i++){
+        try{
+          const d = await c.pools(i);
+          poolsCache.push({
+            id:i, creador:d[0], token:d[1], apyBps:d[2], dias:d[3],
+            recompensa:d[4], depositado:d[5], estado:Number(d[9]), nombre:d[10]
+          });
+        }catch(e){}
+      }
+
+      // símbolos de los tokens que aparecen
+      await Promise.all([...new Set(poolsCache.map(x => x.token.toLowerCase()))].map(simboloDe));
+
+      const activos = poolsCache.filter(x => x.estado === 1);
+      if(!activos.length){
+        cont.innerHTML = '<div class="empty-state">Todavía no hay pools activos</div>';
+      }else{
+        const filas = [];
+        for(const x of activos){
+          const sim = simboloCache[x.token.toLowerCase()] || '?';
+          const dec = decimalesDe(x.token);
+          let mio = { monto:0n, ganancia:0n, falta:0n };
+          if(userAddress){
+            try{
+              const d = await c.depositos(x.id, userAddress);
+              mio.monto = d[0];
+              mio.ganancia = await c.gananciaDe(x.id, userAddress);
+              mio.falta = await c.faltaDesbloqueo(x.id, userAddress);
+            }catch(e){}
+          }
+          const tengo = mio.monto > 0n;
+          filas.push(
+            '<div class="pool-fila">' +
+              '<div class="pool-top">' +
+                '<div class="tk-icon">' + esc(sim.slice(0,1)) + '</div>' +
+                '<div class="pool-nom"><b>' + esc(x.nombre || sim) + '</b>' +
+                  '<small>' + esc(sim) + ' · bloqueo ' + fmtDias(x.dias) + '</small></div>' +
+                '<div class="pool-apy">' + (Number(x.apyBps)/100) + '% APY</div>' +
+              '</div>' +
+              '<div class="pool-datos">' +
+                '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.recompensa, dec))) + '</b><small>QUEDA</small></div>' +
+                '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.depositado, dec))) + '</b><small>BLOQUEADO</small></div>' +
+                (tengo
+                  ? '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(mio.ganancia, dec))) + '</b><small>GANASTE</small></div>'
+                  : '') +
+              '</div>' +
+              (tengo
+                ? '<div class="crear-hint" style="margin-bottom:8px;">Tenés ' +
+                    trimNum(parseFloat(ethers.formatUnits(mio.monto, dec))) + ' ' + esc(sim) +
+                    ' · ' + (Number(mio.falta) > 0 ? 'se libera en ' + fmtEspera(mio.falta) : 'ya lo podés retirar') +
+                  '</div>'
+                : '') +
+              '<div class="pool-acciones">' +
+                '<button class="btn secondary" data-pool-bloquear="' + x.id + '">Bloquear</button>' +
+                (tengo ? '<button class="btn secondary" data-pool-cobrar="' + x.id + '">Cobrar</button>' : '') +
+                (tengo && Number(mio.falta) === 0 ? '<button class="btn secondary" data-pool-retirar="' + x.id + '">Retirar</button>' : '') +
+              '</div>' +
+            '</div>');
+        }
+        cont.innerHTML = filas.join('');
+        enganchesPools(cont);
+      }
+
+      await pintarMisPools(c);
+      await pintarAdminPools(c);
+
+    }catch(e){
+      cont.innerHTML = '<div class="empty-state">No se pudo leer el contrato de pools</div>';
+    }finally{
+      if(btn){ btn.textContent = '↻'; btn.style.opacity = ''; }
+    }
+  }
+
+  function enganchesPools(cont){
+    cont.querySelectorAll('[data-pool-bloquear]').forEach(b =>
+      b.onclick = () => accionPool('bloquear', Number(b.dataset.poolBloquear)));
+    cont.querySelectorAll('[data-pool-cobrar]').forEach(b =>
+      b.onclick = () => accionPool('cobrar', Number(b.dataset.poolCobrar)));
+    cont.querySelectorAll('[data-pool-retirar]').forEach(b =>
+      b.onclick = () => accionPool('retirar', Number(b.dataset.poolRetirar)));
+  }
+
+  // ---------- los pools que creó esta wallet ----------
+  async function pintarMisPools(c){
+    const card  = document.getElementById('misPoolsCard');
+    const lista = document.getElementById('listaMisPools');
+    if(!card || !userAddress) return;
+
+    const mios = poolsCache.filter(x => x.creador.toLowerCase() === userAddress.toLowerCase());
+    if(!mios.length){ card.style.display = 'none'; return; }
+
+    card.style.display = 'block';
+    lista.innerHTML = mios.map(x => {
+      const sim = simboloCache[x.token.toLowerCase()] || '?';
+      const dec = decimalesDe(x.token);
+      return '<div class="pool-fila">' +
+        '<div class="pool-top">' +
+          '<div class="pool-nom"><b>' + esc(x.nombre || sim) + '</b>' +
+            '<small>' + ESTADOS[x.estado] + ' · ' + (Number(x.apyBps)/100) + '% · ' + fmtDias(x.dias) + '</small></div>' +
+        '</div>' +
+        '<div class="pool-datos">' +
+          '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.recompensa, dec))) + '</b><small>RECOMPENSA</small></div>' +
+          '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.depositado, dec))) + '</b><small>BLOQUEADO</small></div>' +
+        '</div>' +
+        (x.estado === 1
+          ? '<div class="pool-acciones"><button class="btn secondary" data-pool-fondear="' + x.id + '">Fondear más</button></div>'
+          : '') +
+      '</div>';
+    }).join('');
+
+    lista.querySelectorAll('[data-pool-fondear]').forEach(b =>
+      b.onclick = () => accionPool('fondear', Number(b.dataset.poolFondear)));
+  }
+
+  // ---------- los que esperan tu aprobación ----------
+  async function pintarAdminPools(c){
+    const card  = document.getElementById('adminPoolsCard');
+    const lista = document.getElementById('listaAdminPools');
+    if(!card) return;
+    if(!esAdmin()){ card.style.display = 'none'; return; }
+
+    const pend = poolsCache.filter(x => x.estado === 0);
+    if(!pend.length){ card.style.display = 'none'; return; }
+
+    card.style.display = 'block';
+    lista.innerHTML = pend.map(x => {
+      const sim = simboloCache[x.token.toLowerCase()] || '?';
+      const dec = decimalesDe(x.token);
+      return '<div class="pool-fila">' +
+        '<div class="pool-top">' +
+          '<div class="pool-nom"><b>' + esc(x.nombre || sim) + '</b>' +
+            '<small style="word-break:break-all;">' + esc(x.token) + '</small></div>' +
+          '<div class="pool-apy">' + (Number(x.apyBps)/100) + '%</div>' +
+        '</div>' +
+        '<div class="pool-datos">' +
+          '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.recompensa, dec))) + '</b><small>DEPOSITÓ</small></div>' +
+          '<div class="pool-dato"><b>' + fmtDias(x.dias) + '</b><small>BLOQUEO</small></div>' +
+        '</div>' +
+        '<div class="pool-acciones">' +
+          '<button class="btn" data-pool-aprobar="' + x.id + '">Aprobar</button>' +
+          '<button class="btn secondary" data-pool-rechazar="' + x.id + '">Rechazar</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    lista.querySelectorAll('[data-pool-aprobar]').forEach(b =>
+      b.onclick = () => accionPool('aprobar', Number(b.dataset.poolAprobar)));
+    lista.querySelectorAll('[data-pool-rechazar]').forEach(b =>
+      b.onclick = () => accionPool('rechazar', Number(b.dataset.poolRechazar)));
+  }
+
+  // ---------- las transacciones ----------
+  async function accionPool(que, id){
+    const k = getMiniKit();
+    if(!k){ showToast('MiniKit no disponible', true); return; }
+    const pool = poolsCache.find(x => x.id === id);
+    if(!pool) return;
+
+    const iface  = new ethers.Interface(STAKING_ABI);
+    const erc20  = new ethers.Interface(ERC20_ABI);
+    const dec    = decimalesDe(pool.token);
+    const sim    = simboloCache[pool.token.toLowerCase()] || 'token';
+    let transactions = [];
+
+    try{
+      if(que === 'aprobar'){
+        transactions = [{ to: BUZZ_STAKING, data: iface.encodeFunctionData('aprobarPool', [id]) }];
+      }else if(que === 'rechazar'){
+        transactions = [{ to: BUZZ_STAKING, data: iface.encodeFunctionData('rechazarPool', [id]) }];
+      }else if(que === 'cobrar'){
+        transactions = [{ to: BUZZ_STAKING, data: iface.encodeFunctionData('cobrarGanancia', [id]) }];
+      }else if(que === 'retirar'){
+        const p = await getReadProvider();
+        const c = new ethers.Contract(BUZZ_STAKING, STAKING_ABI, p);
+        const d = await c.depositos(id, userAddress);
+        transactions = [{ to: BUZZ_STAKING, data: iface.encodeFunctionData('retirar', [id, d[0]]) }];
+      }else if(que === 'bloquear' || que === 'fondear'){
+        const txt = prompt('¿Cuánto ' + sim + ' querés ' + (que === 'bloquear' ? 'bloquear' : 'agregar') + '?');
+        if(!txt) return;
+        const monto = ethers.parseUnits(String(txt).replace(',', '.').trim(), dec);
+        if(monto <= 0n) return;
+        transactions = [
+          { to: pool.token.toLowerCase(), data: erc20.encodeFunctionData('approve', [BUZZ_STAKING, monto]) },
+          { to: BUZZ_STAKING, data: iface.encodeFunctionData(
+              que === 'bloquear' ? 'bloquear' : 'fondearPool', [id, monto]) }
+        ];
+      }
+
+      const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        showToast('Listo');
+        setTimeout(() => { cargarPools(); loadBalances(); }, 1800);
+      }else{
+        showToast('No se pudo completar', true);
+      }
+    }catch(e){
+      const msg = (e && e.message) || '';
+      if(/invalid_contract/i.test(msg) || /invalid_token/i.test(msg)){
+        showToast('Ese token todavía no está habilitado. Agregalo desde "+ Agregar".', true);
+      }else if(!/rejected|cancel/i.test(msg)){
+        showToast('No se pudo completar', true);
+      }
+    }
+  }
+
+  // ---------- solicitar un pool nuevo ----------
+  function abrirSolicitarPool(){
+    ['poolToken','poolNombre','poolRecompensa'].forEach(id => { const e = document.getElementById(id); if(e) e.value = ''; });
+    document.getElementById('poolTokenEstado').innerHTML = '&nbsp;';
+    document.getElementById('poolOut').textContent = '';
+    openModal('poolModal');
+  }
+
+  let poolTimer = null;
+  async function verificarTokenPool(){
+    const est = document.getElementById('poolTokenEstado');
+    const dir = document.getElementById('poolToken').value.trim();
+    if(!dir){ est.innerHTML = '&nbsp;'; return; }
+    if(!/^0x[0-9a-fA-F]{40}$/.test(dir)){ est.textContent = 'Esa no parece una dirección válida.'; return; }
+    est.textContent = 'Leyendo el contrato…';
+    try{
+      const p = await getReadProvider();
+      const c = new ethers.Contract(dir, ERC20_ABI, p);
+      const [n, sim] = await Promise.all([c.name(), c.symbol()]);
+      // si no está habilitado en el swap, el approve va a fallar por la
+      // lista de World App: conviene avisarlo ANTES de que firme
+      const sw = new ethers.Contract(BUZZ_SWAP, AT_ABI, p);
+      const ok = await sw.tokenPermitido(dir).catch(() => false);
+      est.innerHTML = ok
+        ? '✅ ' + esc(n) + ' · ' + esc(sim)
+        : '⚠️ ' + esc(n) + ' (' + esc(sim) + ') todavía no está en la app. ' +
+          'Agregalo primero desde “+ Agregar” en Inicio, si no la transacción va a fallar.';
+    }catch(e){
+      est.textContent = 'No se pudo leer: puede que no sea un ERC-20 de World Chain.';
+    }
+  }
+
+  async function solicitarPool(){
+    const out = document.getElementById('poolOut');
+    const k = getMiniKit();
+    if(!k){ showToast('MiniKit no disponible', true); return; }
+
+    const token  = document.getElementById('poolToken').value.trim();
+    const nombre = document.getElementById('poolNombre').value.trim();
+    const apy    = Number(document.getElementById('poolApy').value);
+    const dias   = Number(document.getElementById('poolDias').value);
+    const recTxt = document.getElementById('poolRecompensa').value.trim();
+
+    if(!/^0x[0-9a-fA-F]{40}$/.test(token)){ out.textContent = 'Poné una dirección válida.'; return; }
+    if(!nombre){ out.textContent = 'Ponele un nombre al pool.'; return; }
+    if(!recTxt){ out.textContent = 'Decí cuánto vas a depositar.'; return; }
+
+    try{
+      out.textContent = 'Preparando…';
+      const p = await getReadProvider();
+      const dec = await new ethers.Contract(token, ERC20_ABI, p).decimals().catch(() => 18);
+      const recompensa = ethers.parseUnits(String(recTxt).replace(',', '.'), Number(dec));
+
+      const c = new ethers.Contract(BUZZ_STAKING, STAKING_ABI, p);
+      const minimo = await c.recompensaMinima().catch(() => 0n);
+      if(recompensa < minimo){
+        out.textContent = 'El mínimo es ' + trimNum(parseFloat(ethers.formatUnits(minimo, 18))) + ' del token.';
+        return;
+      }
+      const costo = await c.costoAbrirPool().catch(() => ethers.parseUnits('5000', 18));
+
+      const erc20 = new ethers.Interface(ERC20_ABI);
+      const iface = new ethers.Interface(STAKING_ABI);
+      const transactions = [
+        { to: BUZZ_TOKEN.toLowerCase(), data: erc20.encodeFunctionData('approve', [BUZZ_STAKING, costo]) },
+        { to: token.toLowerCase(),      data: erc20.encodeFunctionData('approve', [BUZZ_STAKING, recompensa]) },
+        { to: BUZZ_STAKING, data: iface.encodeFunctionData('solicitarPool',
+            [token, apy * 100, dias, recompensa, nombre]) }
+      ];
+
+      out.textContent = 'Firmá en World App…';
+      const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        out.textContent = '✅ Solicitud enviada. Queda esperando aprobación.';
+        setTimeout(() => { closeModal('poolModal'); cargarPools(); }, 1800);
+      }else{
+        out.textContent = 'No se pudo enviar. Revisá que tengas los 5.000 BUZZ y el token.';
+      }
+    }catch(e){
+      const msg = (e && e.message) || '';
+      out.textContent = /invalid_contract|invalid_token/i.test(msg)
+        ? 'Ese token todavía no está habilitado en la app. Agregalo primero desde “+ Agregar”.'
+        : (msg || 'Falló la solicitud');
+    }
+  }
+
   async function cargarHistorial(){
     const cont = document.getElementById('listaHistorial');
     const btn  = document.getElementById('btnHistorial');
@@ -3386,6 +3854,10 @@
     }
   }
 
+  document.getElementById('poolToken').addEventListener('input', () => {
+    if(poolTimer) clearTimeout(poolTimer);
+    poolTimer = setTimeout(verificarTokenPool, 500);
+  });
   document.getElementById('pickerSearch').addEventListener('input', (e) => renderPicker(e.target.value));
   document.getElementById('btnAdminRefrescar').addEventListener('click', adminBuscar);
   document.getElementById('btnAdminCopiar').addEventListener('click', adminCopiar);
