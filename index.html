@@ -1322,6 +1322,19 @@
         </div>
         <button class="btn secondary" onclick="compartirInvitacion()">📤 Copiar mi enlace</button>
         <div class="logo-info" id="refEstado" style="margin-top:8px; min-height:16px;"></div>
+
+        <div id="cargarInvitador" style="display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+          <div class="crear-hint" style="margin-bottom:8px;">
+            ¿Alguien te invitó y no se registró solo? Poné su wallet acá y
+            cobran los dos.
+          </div>
+          <input class="field" id="invitadorManual" placeholder="0x… wallet de quien te invitó"
+                 autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="btn secondary" style="margin-top:8px;" onclick="registrarInvitadorManual()">
+            Confirmar invitador
+          </button>
+          <div class="logo-info" id="invitadorEstado" style="margin-top:8px; min-height:16px;"></div>
+        </div>
       </div>
 
       <div class="section-title" style="font-size:15px; margin-top:8px;"><img class="icimg lg" data-ic="misiones" alt="">Misiones</div>
@@ -1592,10 +1605,24 @@
   }
   pintarIconos();
   document.addEventListener('DOMContentLoaded', () => pintarIconos());
+
+  // El ref del enlace de invitación se lee ACÁ, apenas carga la página y
+  // ANTES de conectar la wallet: World App limpia la URL al abrir la
+  // sesión, así que si se lee después ya no está. Este era el motivo por
+  // el que los referidos no se registraban.
+  (function(){
+    try{
+      const m = window.location.href.match(/(?:ref|code)(?:%3D|=)(0x[a-fA-F0-9]{40})/i);
+      if(m){
+        window.__buzzRef = m[1];
+        try{ sessionStorage.setItem('buzz_ref', m[1]); }catch(e){}
+      }
+    }catch(e){}
+  })();
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b77-perfilrapido-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b79-reftemprano-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2984,17 +3011,58 @@
 
   function detectarInvitacion(){
     try{
-      // puede llegar como ?ref=0x… o codificado dentro de path (ref%3D0x…)
-      const m = window.location.href.match(/(?:ref|code)(?:%3D|=)(0x[a-fA-F0-9]{40})/i);
-      if(!m) return;
-      const ref = m[1];
+      // se toma lo capturado al cargar; si no, se vuelve a mirar la URL
+      let ref = window.__buzzRef || null;
+      if(!ref){
+        try{ ref = sessionStorage.getItem('buzz_ref'); }catch(e){}
+      }
+      if(!ref){
+        const m = window.location.href.match(/(?:ref|code)(?:%3D|=)(0x[a-fA-F0-9]{40})/i);
+        if(m) ref = m[1];
+      }
+      if(!ref) return;
       if(userAddress && ref.toLowerCase() === userAddress.toLowerCase()) return;
       invitadorPendiente = ref;
+
+      // se deja escrito en el campo manual por si la firma automática falla
+      const inp = document.getElementById('invitadorManual');
+      if(inp && !inp.value) inp.value = ref;
     }catch(e){ /* si el enlace viene raro, no pasa nada */ }
   }
 
   // Registra al invitador apenas se conecta la wallet: el invitado no
   // tiene que escribir ni buscar nada, solo confirma en World App.
+  // Carga a mano el invitador, para quien entró sin el enlace o a quien
+  // el registro automático no le funcionó.
+  async function registrarInvitadorManual(){
+    const est = document.getElementById('invitadorEstado');
+    const dir = document.getElementById('invitadorManual').value.trim();
+    if(!/^0x[0-9a-fA-F]{40}$/.test(dir)){ est.textContent = 'Poné una dirección válida.'; return; }
+    if(userAddress && dir.toLowerCase() === userAddress.toLowerCase()){
+      est.textContent = 'No podés invitarte a vos mismo.'; return;
+    }
+    const k = getMiniKit();
+    if(!k){ est.textContent = 'MiniKit no disponible'; return; }
+    try{
+      est.textContent = 'Firmá en World App…';
+      const iface = new ethers.Interface(CLAIM_ABI);
+      const res = await k.sendTransaction({
+        chainId: CHAIN_ID,
+        transactions: [{ to: BUZZ_CLAIM, data: iface.encodeFunctionData('registrarInvitador', [dir]) }]
+      });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        est.textContent = '🎁 Listo, cobraron los dos.';
+        setTimeout(() => { cargarPremios(); loadBalances(); }, 1500);
+      }else{
+        est.textContent = 'No se pudo. Puede que ya tengas invitador.';
+      }
+    }catch(e){
+      est.textContent = (e && e.message) || 'Falló el registro';
+    }
+  }
+
   async function registrarInvitacionAutomatica(){
     if(!invitadorPendiente || !userAddress) return;
     try{
@@ -3073,6 +3141,18 @@
 
     const refs = Number(await leer(() => c.totalReferidos(userAddress), 0n));
     if(elRef) elRef.textContent = refs > 0 ? ' Ya invitaste a ' + refs + '.' : '';
+
+    // si todavía no tiene invitador, se le ofrece cargarlo a mano
+    const miInvitador = await leer(() => c.invitadoPor(userAddress), null);
+    const caja = document.getElementById('cargarInvitador');
+    if(caja){
+      const sinInvitador = !miInvitador || miInvitador === ethers.ZeroAddress;
+      caja.style.display = sinInvitador ? 'block' : 'none';
+    }
+    const est = document.getElementById('refEstado');
+    if(est && miInvitador && miInvitador !== ethers.ZeroAddress){
+      est.textContent = 'Te invitó ' + shortAddr(miInvitador);
+    }
 
     // los montos salen del contrato, así que si los cambiás en Remix
     // la pantalla se actualiza sola
