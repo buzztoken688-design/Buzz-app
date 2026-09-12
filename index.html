@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b88-vivoreal-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b89-gekrouter-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5268,12 +5268,22 @@
   // ---------- ticker: un evento por vez, cruzando ----------
   // Reemplaza la dirección del contrato por la del usuario que operó.
   // Se comparte entre la franja en vivo y la ficha del token.
+  // Direcciones que aparecen como "el que operó" pero son contratos, no
+  // personas: los routers de swap, el router del launchpad y la factory
+  // (que hace la compra inicial del creador al lanzar un token).
   const ROUTERS_PROPIOS = new Set([
     '0xe1e8530e130bdba54aa2c09145ef05be3c9d5905',
     '0xaf4625052b42b568b3c3fb5c7a3250e9db6e4fcf',
     '0xb58205cb2ce339578c44f3528f40a4e0b681360b',
-    '0x03221ffc811bdfc7600c7664460341069c5a83ff'
+    '0x03221ffc811bdfc7600c7664460341069c5a83ff',
+    '0x4a7cbbd43fea663dee20aa6069a13efde7efc5cf',   // GekRouter
+    '0xe467651bafaf731535ab68463a51d45ed98366a8'    // GekFactory
   ]);
+
+  // eventos del GekRouter: Compra(usuario, curva, ...) y Venta(usuario, curva, ...)
+  const TOPIC_GEK_COMPRA = '0x3a92bdd07216dafdf0b04d53c67eff63ce05abe8834ae21e553b430d251ec823';
+  const TOPIC_GEK_VENTA  = '0x8d2e218a278b20a05a7a3ec52efb86273cafcae9da3d1182ac897352cd87f7b7';
+
   let mapaUsuariosPorHash = null;
 
   async function ponerWalletsReales(lista){
@@ -5282,18 +5292,28 @@
 
     if(!mapaUsuariosPorHash){
       mapaUsuariosPorHash = {};
-      for(const topic of [TOPIC_SWAP_V3, TOPIC_SWAP_V2]){
-        try{
-          const r = await fetch(EXPLORER_API +
-            '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
-            '&address=' + BUZZ_SWAP + '&topic0=' + topic);
-          const d = await r.json();
-          (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
-            const t = ev.topics || [];
-            if(t.length < 2 || !ev.transactionHash) return;
-            mapaUsuariosPorHash[ev.transactionHash.toLowerCase()] = '0x' + t[1].slice(26);
-          });
-        }catch(e){}
+      // se miran los DOS contratos: el de swap y el router del launchpad.
+      // Los tokens lanzados se compran contra la curva por el GekRouter,
+      // no por el contrato de swap: por eso antes el cruce no encontraba
+      // nada y seguía mostrando el contrato.
+      const fuentes = [
+        { dir: BUZZ_SWAP,  topics: [TOPIC_SWAP_V3, TOPIC_SWAP_V2] },
+        { dir: GEK_ROUTER, topics: [TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA] }
+      ];
+      for(const f of fuentes){
+        for(const topic of f.topics){
+          try{
+            const r = await fetch(EXPLORER_API +
+              '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+              '&address=' + f.dir + '&topic0=' + topic);
+            const d = await r.json();
+            (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
+              const t = ev.topics || [];
+              if(t.length < 2 || !ev.transactionHash) return;
+              mapaUsuariosPorHash[ev.transactionHash.toLowerCase()] = '0x' + t[1].slice(26);
+            });
+          }catch(e){}
+        }
       }
     }
 
@@ -6085,41 +6105,8 @@
       else if(a === curva)  brutos.push({ hash, ts, tipo: 'venta',  wallet: de, tokens: cant });
     });
 
-    // Los swaps hechos desde la app pasan por el contrato propio, así que
-    // en las transferencias contra la curva el que figura es SIEMPRE el
-    // contrato y no la persona. Se cruzan los eventos del contrato, que sí
-    // guardan la wallet real, usando el hash de la transacción.
-    try{
-      const routers = new Set([
-        BUZZ_SWAP,
-        '0xaf4625052b42b568b3c3fb5c7a3250e9db6e4fcf',
-        '0xb58205cb2ce339578c44f3528f40a4e0b681360b',
-        '0x03221ffc811bdfc7600c7664460341069c5a83ff'
-      ].map(a => a.toLowerCase()));
-
-      const hayRouter = brutos.some(o => routers.has((o.wallet || '').toLowerCase()));
-      if(hayRouter){
-        const porHash = {};
-        for(const topic of [TOPIC_SWAP_V3, TOPIC_SWAP_V2]){
-          try{
-            const r = await fetch(EXPLORER_API +
-              '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
-              '&address=' + BUZZ_SWAP + '&topic0=' + topic);
-            const d = await r.json();
-            (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
-              const t = ev.topics || [];
-              if(t.length < 2) return;
-              const usuario = '0x' + t[1].slice(26);
-              if(ev.transactionHash) porHash[ev.transactionHash.toLowerCase()] = usuario;
-            });
-          }catch(e){}
-        }
-        brutos.forEach(o => {
-          const real = porHash[(o.hash || '').toLowerCase()];
-          if(real && routers.has((o.wallet || '').toLowerCase())) o.wallet = real;
-        });
-      }
-    }catch(e){ /* si falla, se muestran como estaban */ }
+    // se reemplazan los contratos por la wallet real de cada usuario
+    await ponerWalletsReales(brutos);
 
     brutos.sort((x, y) => x.ts - y.ts);
 
