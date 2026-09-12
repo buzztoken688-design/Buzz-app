@@ -1067,9 +1067,6 @@
 
       <div class="card" id="tkPane"></div>
 
-      <button class="btn secondary" id="btnRepartir" style="margin-top:12px; display:none;"
-              onclick="abrirReparto()">🎁 Repartir / regalar</button>
-
       <div id="tkFallos" style="display:none; font-size:10.5px; line-height:1.6; color:var(--red);
            background:rgba(255,77,77,.08); border:1px solid rgba(255,77,77,.3);
            border-radius:11px; padding:10px 12px; margin-top:14px; word-break:break-word;"></div>
@@ -1531,40 +1528,6 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="repartoModal">
-  <div class="modal" style="position:relative; max-height:88vh; overflow-y:auto;">
-    <div class="close-x" onclick="closeModal('repartoModal')">✕</div>
-    <div class="modal-handle"></div>
-    <div class="modal-title">🎁 Repartir <span id="rpSimbolo"></span></div>
-    <div class="crear-hint" style="margin-bottom:12px;">
-      Una línea por persona: la dirección y la cantidad, separadas por un
-      espacio o una coma.
-    </div>
-
-    <textarea class="field" id="rpLista" rows="6" spellcheck="false"
-      style="font-family:ui-monospace,monospace; font-size:12.5px; resize:vertical;"
-      placeholder="0xabc… 1000&#10;0xdef… 2500"></textarea>
-
-    <div class="field-label" style="margin-top:12px;">Plazo de custodia de quien recibe</div>
-    <select class="field" id="rpPlazo">
-      <option value="1" selected>24 horas</option>
-      <option value="2">7 días</option>
-      <option value="3">15 días</option>
-      <option value="4">1 mes</option>
-      <option value="5">3 meses</option>
-    </select>
-    <div class="crear-hint" style="margin-top:6px;">
-      Los recibe bloqueados y los reclama después desde su billetera. No hay
-      envío instantáneo: es el único canal que funciona sin registrar cada
-      token en World App.
-    </div>
-
-    <div class="logo-info" id="rpInfo" style="margin:12px 0 0;"></div>
-    <button class="btn" id="rpBtn" style="margin-top:12px;" onclick="confirmarReparto()">Repartir</button>
-    <div class="logo-info" id="rpErr" style="margin-top:8px; min-height:16px; color:var(--red);"></div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="montoModal">
   <div class="modal" style="position:relative;">
     <div class="close-x" onclick="closeModal('montoModal')">✕</div>
@@ -1715,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b92-airdrop-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b95-sinairdrop-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3713,114 +3676,6 @@
     }
   }
 
-  // ============================================================
-  //  REPARTIR / REGALAR (airdrop)
-  //  Todo pasa por `bloquearPara` del GekLock: saca los tokens de quien
-  //  firma y se los acredita a otra dirección. Es el único canal que
-  //  funciona sin registrar cada token en World App, porque la dirección
-  //  de cada token es distinta y no se puede declarar de antemano.
-  // ============================================================
-  const LOCK_ABI = ['function bloquearPara(address token, uint256 monto, uint8 plazo, address para)'];
-
-  function abrirReparto(){
-    const t = lzActual;
-    if(!t){ showToast('Abrí primero un token', true); return; }
-    if(!userAddress){ showToast('Conectá tu wallet', true); return; }
-
-    document.getElementById('rpSimbolo').textContent = '$' + (t.simbolo || '');
-    document.getElementById('rpLista').value = '';
-    document.getElementById('rpErr').textContent = '';
-
-    const libre = repartoSaldo();
-    document.getElementById('rpInfo').textContent = libre > 0
-      ? 'Disponibles: ' + trimNum(libre) + ' ' + (t.simbolo || '')
-      : 'No tenés ' + (t.simbolo || 'ese token') + ' disponible.';
-    document.getElementById('rpBtn').disabled = libre <= 0;
-    openModal('repartoModal');
-  }
-
-  function repartoSaldo(){
-    const t = lzActual;
-    if(!t) return 0;
-    const enWallet = walletTokens.find(x => x.address &&
-      x.address.toLowerCase() === (t.address || '').toLowerCase());
-    return enWallet ? parseFloat(String(enWallet.balance).replace(/\./g, '').replace(',', '.')) || 0 : 0;
-  }
-
-  // Cada línea: una dirección y una cantidad. Se saca la dirección con un
-  // patrón y el RESTO es la cantidad: partir por comas rompía los decimales
-  // en español ("1000,5" se leía como 1000).
-  function leerReparto(texto){
-    const filas = [], errores = [];
-    String(texto).split(/\n+/).forEach((linea, i) => {
-      const l = linea.trim();
-      if(!l) return;
-      const m = l.match(/^(0x[0-9a-fA-F]{40})[\s,;]*(.*)$/);
-      if(!m){ errores.push('Línea ' + (i+1) + ': dirección inválida'); return; }
-      const cant = parseFloat(String(m[2]).replace(/\s/g, '').replace(',', '.'));
-      if(!(cant > 0)){ errores.push('Línea ' + (i+1) + ': falta la cantidad'); return; }
-      filas.push({ dir: m[1], cant });
-    });
-    return { filas, errores };
-  }
-
-  async function confirmarReparto(){
-    const t = lzActual;
-    if(!t) return;
-    const btn = document.getElementById('rpBtn');
-    const err = document.getElementById('rpErr');
-    err.textContent = '';
-
-    const plazo = parseInt(document.getElementById('rpPlazo').value, 10);
-    const libre = repartoSaldo();
-    const { filas, errores } = leerReparto(document.getElementById('rpLista').value || '');
-
-    if(errores.length){ err.innerHTML = errores.join('<br>'); return; }
-    if(!filas.length){ err.textContent = 'Escribí al menos una dirección con su cantidad.'; return; }
-
-    const total = filas.reduce((a, f) => a + f.cant, 0);
-    if(total > libre){
-      err.textContent = 'Sumás ' + trimNum(total) + ' pero solo tenés ' + trimNum(libre) + ' ' + (t.simbolo || '');
-      return;
-    }
-    // un lote grande lo rechaza World App por límite de gas
-    if(filas.length > 20){
-      err.textContent = 'Máximo 20 por vez. Dividilo en varias tandas.';
-      return;
-    }
-
-    const k = getMiniKit();
-    if(!k){ err.textContent = 'MiniKit no disponible'; return; }
-
-    const etiqueta = btn.textContent;
-    btn.disabled = true; btn.textContent = 'Repartiendo…';
-    try{
-      const iface = new ethers.Interface(LOCK_ABI);
-      const dec = t.decimals != null ? Number(t.decimals) : 18;
-      const transactions = filas.map(f => ({
-        to: GEK_LOCK.toLowerCase(),
-        data: iface.encodeFunctionData('bloquearPara',
-          [t.address, ethers.parseUnits(String(f.cant), dec), plazo, f.dir])
-      }));
-
-      const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
-      const ok = (res && res.data && res.data.status === 'success')
-              || (res && res.finalPayload && res.finalPayload.status !== 'error');
-      if(ok){
-        showToast('🎁 ' + trimNum(total) + ' ' + (t.simbolo || '') + ' repartidos a ' + filas.length + ' wallet(s)');
-        closeModal('repartoModal');
-        setTimeout(loadBalances, 1800);
-      }else{
-        err.textContent = 'No se pudo repartir. Probá de nuevo.';
-      }
-    }catch(e){
-      const msg = (e && e.message) || '';
-      err.textContent = /rejected|cancel/i.test(msg) ? '' : (msg || 'Falló el reparto');
-    }finally{
-      btn.disabled = false; btn.textContent = etiqueta;
-    }
-  }
-
   // ---------- pedir el monto sin usar prompt() ----------
   let montoCtx = null;
 
@@ -5323,62 +5178,90 @@
   //
   // Se arma con lo que sí funciona: las transferencias de cada token.
   // Si el token sale de su curva es una compra; si entra, una venta.
+  // ============================================================
+  //  FEED EN VIVO
+  //  Se lee DIRECTO de los eventos Compra/Venta del GekRouter, que ya
+  //  traen la wallet del usuario. Antes se leían las transferencias del
+  //  token contra la curva, y ahí el que figura es siempre el contrato
+  //  que enrutó la operación, nunca la persona: por eso salía la misma
+  //  dirección en todo.
+  // ============================================================
+  const VENTANA_BLOQUES = 1000;   // lo máximo que acepta el RPC por consulta
+
+  // Trae las operaciones de un rango de bloques, compras y ventas juntas.
+  async function logsDeRango(p, desde, hasta, curva){
+    const topics = [[TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA]];
+    if(curva){
+      // segundo campo indexado = la curva: así se filtra un token puntual
+      topics.push(null);
+      topics.push('0x' + curva.toLowerCase().replace('0x','').padStart(64, '0'));
+    }
+    const logs = await p.getLogs({ address: GEK_ROUTER, topics, fromBlock: desde, toBlock: hasta });
+    return logs.map(l => {
+      const esCompra = l.topics[0] === TOPIC_GEK_COMPRA;
+      const datos = (l.data || '0x').slice(2);
+      const palabra = (i) => datos.length >= (i+1)*64 ? BigInt('0x' + datos.slice(i*64, (i+1)*64)) : 0n;
+      // Compra(usuario, curva, quoteIn, tokensOut) · Venta(usuario, curva, tokensIn, quoteOut)
+      const a = palabra(0), b = palabra(1);
+      return {
+        tipo:   esCompra ? 'compra' : 'venta',
+        wallet: '0x' + l.topics[1].slice(26),
+        curva:  '0x' + l.topics[2].slice(26),
+        wld:    parseFloat(ethers.formatUnits(esCompra ? a : b, 18)),
+        tokens: parseFloat(ethers.formatUnits(esCompra ? b : a, 18)),
+        bloque: Number(l.blockNumber),
+        hash:   l.transactionHash
+      };
+    });
+  }
+
+  // Barre varios rangos en tandas, con una pausa entre cada una: los RPC
+  // gratuitos miden peticiones por segundo y en paralelo agresivo rechazan.
+  async function barrerLogs(p, desde, hasta, curva){
+    const tramos = [];
+    for(let d = desde; d <= hasta; d += VENTANA_BLOQUES){
+      tramos.push([d, Math.min(d + VENTANA_BLOQUES - 1, hasta)]);
+    }
+    let ops = [];
+    for(let i = 0; i < tramos.length; i += 6){
+      const tanda = tramos.slice(i, i + 6);
+      const res = await Promise.all(tanda.map(([a, b]) =>
+        logsDeRango(p, a, b, curva).catch(() => [])));
+      res.forEach(r => { ops = ops.concat(r); });
+      if(i + 6 < tramos.length) await new Promise(r => setTimeout(r, 60));
+    }
+    return ops;
+  }
+
   async function cargarVivo(){
     const el = document.getElementById('vivoLista');
     try{
       if(!lanzados.length) await cargarLanzados();
-      const top = lanzados
-        .filter(t => lanzadoVisible(t.address))
-        .slice()
-        .sort((a, b) => (b.raised > a.raised ? 1 : (b.raised < a.raised ? -1 : 0)))
-        .slice(0, VIVO_TOKENS);
 
-      if(!top.length){
-        vivoOps = []; renderVivo(); return;
+      const p = await getReadProvider();
+      const ahora = await p.getBlockNumber();
+      const desde = Math.max(0, ahora - VENTANA_BLOQUES * 12);   // ~4 horas
+
+      const crudas = await barrerLogs(p, desde, ahora);
+      if(!crudas.length){ vivoOps = []; renderVivo(); actualizarTicker(); return; }
+
+      // de la curva al token, para poder mostrar símbolo e ícono
+      const porCurva = {};
+      lanzados.forEach(t => { if(t.curva) porCurva[t.curva.toLowerCase()] = t; });
+
+      const visibles = [];
+      for(const o of crudas){
+        const t = porCurva[o.curva.toLowerCase()];
+        if(!t || !lanzadoVisible(t.address)) continue;
+        visibles.push({
+          ts: Date.now() - (ahora - o.bloque) * 2000,   // ~2 s por bloque
+          hash: o.hash, tipo: o.tipo, wallet: o.wallet,
+          cantidad: o.tokens, wld: o.wld,
+          simbolo: t.simbolo, token: t.address, icon: t.icon || null
+        });
       }
 
-      const porToken = await Promise.all(top.map(async (t) => {
-        try{
-          const r = await fetch(TK_EXPLORER + '/tokens/' + t.address + '/transfers');
-          if(!r.ok) return [];
-          const d = await r.json();
-          if(!Array.isArray(d.items)) return [];
-          const curva = (t.curva || '').toLowerCase();
-          const ops = [];
-          d.items.forEach(it => {
-            const de  = ((it.from && it.from.hash) || '').toLowerCase();
-            const a   = ((it.to   && it.to.hash)   || '').toLowerCase();
-            const val = it.total && it.total.value;
-            if(val == null) return;
-            const dec = Number((it.total && it.total.decimals) != null ? it.total.decimals : t.decimals);
-            let cant;
-            try{ cant = parseFloat(ethers.formatUnits(BigInt(val), dec)); }catch(e){ return; }
-            if(!(cant > 0)) return;
-            const ts = it.timestamp ? Date.parse(it.timestamp) : null;
-            if(!ts) return;
-            const hash = it.transaction_hash || it.tx_hash || '';
-            if(de === curva){
-              ops.push({ ts, hash, tipo: 'compra', wallet: a,  cantidad: cant,
-                         simbolo: t.simbolo, token: t.address, icon: t.icon || null });
-            }else if(a === curva){
-              ops.push({ ts, hash, tipo: 'venta',  wallet: de, cantidad: cant,
-                         simbolo: t.simbolo, token: t.address, icon: t.icon || null });
-            }
-          });
-          return ops;
-        }catch(e){ return []; }
-      }));
-
-      vivoOps = [].concat.apply([], porToken)
-        .sort((x, y) => y.ts - x.ts)
-        .slice(0, 40);
-
-      // Igual que en la ficha del token: si la operación pasó por el
-      // contrato propio, la transferencia contra la curva muestra al
-      // CONTRATO y no a la persona. Se cruza por el hash con los eventos
-      // del contrato, que sí guardan la wallet real.
-      await ponerWalletsReales(vivoOps);
-
+      vivoOps = visibles.sort((x, y) => y.ts - x.ts).slice(0, 40);
       renderVivo();
       actualizarTicker();
     }catch(e){
@@ -6130,9 +6013,6 @@
   async function abrirLanzado(t){
     lzActual = t;
     lzSaldo  = 0n;
-    // el reparto solo existe para tokens del launchpad: pasan por el lock
-    const bRep = document.getElementById('btnRepartir');
-    if(bRep) bRep.style.display = 'block';
     tkOps = []; tkHolders = []; tkDatos = null; tkPane = 'stats'; tkErrores = [];
     goTab('lanzado');
 
@@ -6211,98 +6091,36 @@
     }, ms));
   }
 
-  // ---------- datos del explorador ----------
-  //  Todas las transferencias que tocan la curva. Cada operación deja
-  //  DOS en la misma transacción: el WLD que entra o sale, y el token
-  //  que va al revés. Agrupando por hash sale el precio exacto de cada
-  //  compra y venta, sin barrer eventos con eth_getLogs.
-  // Las operaciones salen de las transferencias DEL TOKEN, no de las de la
-  // curva: /tokens/{addr}/transfers es el mismo endpoint que ya funciona
-  // para poseedores. Si el token sale de la curva es una compra; si entra,
-  // una venta. Así no dependemos del listado por dirección, que devolvía
-  // datos con otra forma y dejaba la pestaña vacía sin avisar.
+  // ---------- operaciones del token ----------
+  //  Se leen los eventos Compra/Venta del GekRouter filtrados por la curva
+  //  de este token. Ahí viene la wallet REAL de cada persona y el WLD
+  //  exacto que movió. Antes se leían las transferencias del token contra
+  //  la curva, y en esas el que figura es el contrato que enrutó la
+  //  operación —el router o la factory—, nunca quien la hizo.
   async function cargarOperaciones(t){
-    const urls = [
-      TK_EXPLORER + '/tokens/' + t.address + '/transfers',
-      TK_EXPLORER + '/addresses/' + t.curva + '/token-transfers?type=ERC-20'
-    ];
-    let items = null, ultimo = '';
-    for(const u of urls){
-      try{
-        const r = await fetch(u);
-        if(!r.ok){ ultimo = 'HTTP ' + r.status; continue; }
-        const d = await r.json();
-        // solo sirve si de verdad son transferencias: si no, seguimos probando
-        if(Array.isArray(d.items) && (!d.items.length || d.items[0].total)){
-          items = d.items; break;
-        }
-        ultimo = 'el explorador devolvió otra cosa';
-      }catch(e){ ultimo = (e && e.message) ? e.message : String(e); }
-    }
-    if(items === null){
-      tkErrores.push('operaciones: ' + (ultimo || 'sin respuesta'));
+    try{
+      const p = await getReadProvider();
+      const ahora = await p.getBlockNumber();
+      const desde = Math.max(0, ahora - VENTANA_BLOQUES * 40);   // ~22 horas
+
+      const crudas = await barrerLogs(p, desde, ahora, t.curva);
+      if(!crudas.length){ tkOps = []; return; }
+
+      tkOps = crudas
+        .map(o => ({
+          hash: o.hash,
+          ts: Date.now() - (ahora - o.bloque) * 2000,   // ~2 s por bloque
+          tipo: o.tipo,
+          wallet: o.wallet,
+          tokens: o.tokens,
+          wld: o.wld,
+          precio: o.tokens > 0 ? o.wld / o.tokens : null
+        }))
+        .sort((x, y) => x.ts - y.ts);
+    }catch(e){
+      tkErrores.push('operaciones: ' + (e && e.message ? e.message : e));
       tkOps = [];
-      return;
     }
-
-    const curva     = (t.curva   || '').toLowerCase();
-    const tokenAddr = (t.address || '').toLowerCase();
-    const brutos = [];
-
-    items.forEach(it => {
-      const ta = ((it.token && it.token.address) || '').toLowerCase();
-      if(ta && ta !== tokenAddr) return;
-      const de  = ((it.from && it.from.hash) || '').toLowerCase();
-      const a   = ((it.to   && it.to.hash)   || '').toLowerCase();
-      const val = it.total && it.total.value;
-      if(val == null) return;
-      const dec  = Number((it.total && it.total.decimals) != null ? it.total.decimals : t.decimals);
-      let cant;
-      try{ cant = parseFloat(ethers.formatUnits(BigInt(val), dec)); }catch(e){ return; }
-      if(!(cant > 0)) return;
-      const ts = it.timestamp ? Date.parse(it.timestamp) : null;
-      if(!ts) return;
-      const hash = it.transaction_hash || it.tx_hash || '';
-      if(de === curva)      brutos.push({ hash, ts, tipo: 'compra', wallet: a,  tokens: cant });
-      else if(a === curva)  brutos.push({ hash, ts, tipo: 'venta',  wallet: de, tokens: cant });
-    });
-
-    // se reemplazan los contratos por la wallet real de cada usuario
-    await ponerWalletsReales(brutos);
-
-    brutos.sort((x, y) => x.ts - y.ts);
-
-    // Precio de la CURVA, no precio medio de cada operación.
-    // Como la curva mantiene Q×T constante, P = k/T². Se sigue la reserva de
-    // tokens hacia atrás desde la actual (comprar la baja, vender la sube) y
-    // P_i = P_ahora × (T_ahora / T_i)². Así toda compra SUBE y toda venta BAJA,
-    // en vez de los dientes de sierra que da el precio medio con comisiones.
-    const pAhora = precioActual();
-    const Tahora = (tkDatos && tkDatos.vT != null)
-      ? parseFloat(ethers.formatUnits(tkDatos.vT, t.decimals)) : null;
-
-    if(pAhora == null || !Tahora || !brutos.length){
-      tkOps = brutos.map(o => Object.assign({}, o, { precio: null, wld: 0 }));
-      return;
-    }
-
-    const reservaTras = new Array(brutos.length);
-    let despues = Tahora;
-    for(let i = brutos.length - 1; i >= 0; i--){
-      reservaTras[i] = despues;
-      despues = brutos[i].tipo === 'compra'
-        ? despues + brutos[i].tokens      // la compra sacó tokens de la curva
-        : despues - brutos[i].tokens;     // la venta se los devolvió
-    }
-
-    tkOps = brutos.map((o, i) => {
-      const T = reservaTras[i];
-      const precio = (T > 0) ? pAhora * Math.pow(Tahora / T, 2) : null;
-      return Object.assign({}, o, {
-        precio: precio,
-        wld: precio != null ? o.tokens * precio : 0   // volumen aproximado
-      });
-    });
   }
 
   async function cargarHolders(t){
