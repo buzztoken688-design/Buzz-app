@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b89-gekrouter-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b90-getlogs-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5292,29 +5292,43 @@
 
     if(!mapaUsuariosPorHash){
       mapaUsuariosPorHash = {};
-      // se miran los DOS contratos: el de swap y el router del launchpad.
-      // Los tokens lanzados se compran contra la curva por el GekRouter,
-      // no por el contrato de swap: por eso antes el cruce no encontraba
-      // nada y seguía mostrando el contrato.
-      const fuentes = [
-        { dir: BUZZ_SWAP,  topics: [TOPIC_SWAP_V3, TOPIC_SWAP_V2] },
-        { dir: GEK_ROUTER, topics: [TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA] }
-      ];
-      for(const f of fuentes){
-        for(const topic of f.topics){
-          try{
-            const r = await fetch(EXPLORER_API +
-              '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
-              '&address=' + f.dir + '&topic0=' + topic);
-            const d = await r.json();
-            (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
-              const t = ev.topics || [];
-              if(t.length < 2 || !ev.transactionHash) return;
-              mapaUsuariosPorHash[ev.transactionHash.toLowerCase()] = '0x' + t[1].slice(26);
-            });
-          }catch(e){}
+      try{
+        const p = await getReadProvider();
+        const ahora = await p.getBlockNumber();
+
+        // Se pide por eth_getLogs en ventanas de 1000 bloques, que es el
+        // máximo que acepta el RPC público. La API del explorador no
+        // devolvía estos eventos y por eso los intentos anteriores no
+        // cambiaban nada.
+        const VENTANA = 1000;
+        const TRAMOS  = 45;                 // ~25 horas de historial
+        const rangos = [];
+        for(let i = 0; i < TRAMOS; i++){
+          const hasta = ahora - i * VENTANA;
+          const desde = hasta - VENTANA + 1;
+          if(desde < 0) break;
+          rangos.push([desde, hasta]);
         }
-      }
+
+        const topics = [[TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA, TOPIC_SWAP_V3, TOPIC_SWAP_V2]];
+        const direcciones = [GEK_ROUTER, BUZZ_SWAP];
+
+        // de a 6 tramos por vez, para no saturar el RPC
+        for(let i = 0; i < rangos.length; i += 6){
+          const lote = rangos.slice(i, i + 6);
+          await Promise.all(lote.map(async ([desde, hasta]) => {
+            for(const dir of direcciones){
+              try{
+                const logs = await p.getLogs({ address: dir, topics, fromBlock: desde, toBlock: hasta });
+                logs.forEach(l => {
+                  if(!l.topics || l.topics.length < 2 || !l.transactionHash) return;
+                  mapaUsuariosPorHash[l.transactionHash.toLowerCase()] = '0x' + l.topics[1].slice(26);
+                });
+              }catch(e){ /* tramo sin datos o rechazado */ }
+            }
+          }));
+        }
+      }catch(e){ /* si no se puede, se muestran como estaban */ }
     }
 
     lista.forEach(o => {
