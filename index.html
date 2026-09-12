@@ -1595,7 +1595,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b76-pools-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b77-perfilrapido-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -1743,6 +1743,7 @@
     document.querySelectorAll('.tab-btn-plain').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     if(name === 'tendencias' || name === 'swap') loadTrending();
     if(name === 'tendencias'){ renderLpStrip(); cargarLanzados(); }
+    if(name === 'perfil') cargarPerfil();
     if(name === 'crear') initCrear();
     if(name === 'anunciar') initAnunciar();
     if(name === 'lanzados'){
@@ -1755,6 +1756,20 @@
     if(acc) acc.classList.toggle('on', name === 'lanzado');
     if(name !== 'lanzado') cerrarHoja();
     if(name !== 'lanzados') cerrarVivoSheet();
+  }
+
+  // Carga el contenido de Perfil la primera vez que se entra, y de ahí en
+  // más solo si se pide a mano con los botones ↻. Así entrar a la app es
+  // rápido y las consultas se hacen cuando de verdad se miran.
+  let perfilCargado = false;
+  async function cargarPerfil(forzar){
+    if(!userAddress) return;
+    if(perfilCargado && !forzar) return;
+    perfilCargado = true;
+    // de a uno y en orden, para no saturar el RPC con todo junto
+    try{ await cargarPremios(); }catch(e){}
+    try{ await cargarMisTokens(); }catch(e){}
+    try{ await cargarPools(); }catch(e){}
   }
 
   function openModal(id){ document.getElementById(id).classList.add('show'); }
@@ -1866,11 +1881,11 @@
     document.getElementById('userTag').textContent = username ? '@'+username : shortAddr(userAddress);
     document.getElementById('walletAddrShort').textContent = shortAddr(userAddress);
     mostrarPanelAdmin();
-    cargarMisTokens();
     detectarInvitacion();
-    cargarPremios();
-    cargarPools();
     registrarInvitacionAutomatica();
+    // Lo pesado de Perfil (tokens agregados, premios, pools) NO se carga acá:
+    // eran decenas de consultas al conectar y hacían que la app arrancara
+    // lenta o directamente no cargara. Ahora se piden al entrar a Perfil.
     document.getElementById('receiveAddr').textContent = userAddress;
     document.getElementById('profileUser').textContent = username ? '@'+username : 'Sin username';
     document.getElementById('profileAddr').textContent = userAddress;
