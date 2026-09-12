@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c01-grafico-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c02-preciowld-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -4827,15 +4827,44 @@
   let wldUsdCache = { valor: null, at: 0 };
   async function precioWldUsd(){
     if(wldUsdCache.valor != null && (Date.now() - wldUsdCache.at) < 3 * 60 * 1000) return wldUsdCache.valor;
+
+    const wld = WLD_ADDRESS.toLowerCase();
+    let valor = null;
+
+    // OJO con esto: en un par, `priceUsd` es el precio del token BASE.
+    // En EGG/WLD el base es EGG, así que tomar ese número daba el precio
+    // de EGG y no el de WLD. Hay que mirar de qué lado del par está.
     try{
       const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + WLD_ADDRESS);
       const d = await r.json();
-      const pair = (d.pairs || []).filter(p => p.chainId === 'worldchain')
-        .sort((a, b) => ((b.liquidity && b.liquidity.usd) || 0) - ((a.liquidity && a.liquidity.usd) || 0))[0];
-      if(pair && pair.priceUsd){
-        wldUsdCache = { valor: parseFloat(pair.priceUsd), at: Date.now() };
+      const pares = (d.pairs || []).filter(p => p.chainId === 'worldchain');
+      const liq = p => (p.liquidity && p.liquidity.usd) || 0;
+
+      // 1) pares donde WLD es el token BASE: ahí priceUsd ES el de WLD
+      const comoBase = pares
+        .filter(p => p.baseToken && (p.baseToken.address || '').toLowerCase() === wld && p.priceUsd)
+        .sort((a, b) => liq(b) - liq(a))[0];
+      if(comoBase) valor = parseFloat(comoBase.priceUsd);
+
+      // 2) si no hay, se despeja de un par donde WLD es el de cotización:
+      //    priceUsd es el del base en dólares y priceNative el del base en
+      //    WLD, así que dividiendo sale cuánto vale un WLD.
+      if(valor == null){
+        const comoQuote = pares
+          .filter(p => p.quoteToken && (p.quoteToken.address || '').toLowerCase() === wld &&
+                       p.priceUsd && p.priceNative && parseFloat(p.priceNative) > 0)
+          .sort((a, b) => liq(b) - liq(a))[0];
+        if(comoQuote){
+          valor = parseFloat(comoQuote.priceUsd) / parseFloat(comoQuote.priceNative);
+        }
       }
     }catch(e){}
+
+    // control de cordura: si el número queda fuera de todo rango razonable,
+    // es que se leyó el par equivocado y se prefiere no mostrar nada
+    if(valor != null && (!isFinite(valor) || valor <= 0 || valor > 100)) valor = null;
+
+    if(valor != null) wldUsdCache = { valor, at: Date.now() };
     return wldUsdCache.valor;
   }
 
