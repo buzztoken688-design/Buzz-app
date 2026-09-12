@@ -329,7 +329,11 @@
     height:100dvh; max-height:100dvh; border-radius:0;
     display:flex; flex-direction:column;
   }
-  #poolsHoja #listaPoolsHoja{flex:1; overflow-y:auto;}
+  #poolsHoja #listaPoolsHoja{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  /* la hoja tapa todo: sin esto se ve la página de atrás y se puede
+     desplazar y tocar por debajo */
+  #poolsHoja{background:var(--bg); align-items:stretch;}
+  body.sin-scroll{overflow:hidden; position:fixed; width:100%;}
   .modal-overlay.show{display:flex;}
   .modal{
     background:var(--bg-elev); border-top:1px solid var(--border); border-radius:20px 20px 0 0;
@@ -1509,7 +1513,7 @@
   </div>
 </div>
 
-<div class="hoja" id="poolsHoja" onclick="if(event.target===this) cerrarPoolsHoja()">
+<div class="hoja" id="poolsHoja">
   <div class="hoja-caja">
     <div class="hoja-tira"></div>
     <div class="hoja-head">
@@ -1674,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b85-capas-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b87-hojafija-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3756,7 +3760,11 @@
 
   // ---------- solicitar un pool nuevo ----------
   // ---------- hoja de pools desde Inicio ----------
+  let scrollGuardado = 0;
   async function abrirPoolsHoja(){
+    scrollGuardado = window.scrollY || 0;
+    document.body.classList.add('sin-scroll');
+    document.body.style.top = '-' + scrollGuardado + 'px';
     document.getElementById('poolsHoja').classList.add('on');
     const cont = document.getElementById('listaPoolsHoja');
     cont.innerHTML = '<div class="empty-state">Cargando…</div>';
@@ -3768,6 +3776,9 @@
   }
   function cerrarPoolsHoja(){
     document.getElementById('poolsHoja').classList.remove('on');
+    document.body.classList.remove('sin-scroll');
+    document.body.style.top = '';
+    window.scrollTo(0, scrollGuardado);   // se vuelve a donde estaba
   }
 
   // ---------- aviso de pendientes para el admin ----------
@@ -6029,6 +6040,42 @@
       if(de === curva)      brutos.push({ hash, ts, tipo: 'compra', wallet: a,  tokens: cant });
       else if(a === curva)  brutos.push({ hash, ts, tipo: 'venta',  wallet: de, tokens: cant });
     });
+
+    // Los swaps hechos desde la app pasan por el contrato propio, así que
+    // en las transferencias contra la curva el que figura es SIEMPRE el
+    // contrato y no la persona. Se cruzan los eventos del contrato, que sí
+    // guardan la wallet real, usando el hash de la transacción.
+    try{
+      const routers = new Set([
+        BUZZ_SWAP,
+        '0xaf4625052b42b568b3c3fb5c7a3250e9db6e4fcf',
+        '0xb58205cb2ce339578c44f3528f40a4e0b681360b',
+        '0x03221ffc811bdfc7600c7664460341069c5a83ff'
+      ].map(a => a.toLowerCase()));
+
+      const hayRouter = brutos.some(o => routers.has((o.wallet || '').toLowerCase()));
+      if(hayRouter){
+        const porHash = {};
+        for(const topic of [TOPIC_SWAP_V3, TOPIC_SWAP_V2]){
+          try{
+            const r = await fetch(EXPLORER_API +
+              '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+              '&address=' + BUZZ_SWAP + '&topic0=' + topic);
+            const d = await r.json();
+            (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
+              const t = ev.topics || [];
+              if(t.length < 2) return;
+              const usuario = '0x' + t[1].slice(26);
+              if(ev.transactionHash) porHash[ev.transactionHash.toLowerCase()] = usuario;
+            });
+          }catch(e){}
+        }
+        brutos.forEach(o => {
+          const real = porHash[(o.hash || '').toLowerCase()];
+          if(real && routers.has((o.wallet || '').toLowerCase())) o.wallet = real;
+        });
+      }
+    }catch(e){ /* si falla, se muestran como estaban */ }
 
     brutos.sort((x, y) => x.ts - y.ts);
 
