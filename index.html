@@ -319,6 +319,17 @@
     position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:150;
     display:none; align-items:flex-end; justify-content:center;
   }
+  /* estos dos se abren DESDE la hoja de pools (capa 200), así que tienen
+     que ir más arriba o quedan tapados */
+  #montoModal, #poolModal{z-index:260;}
+
+  /* la hoja de pools ocupa la pantalla entera: es una lista larga y
+     a media altura no se ve casi nada */
+  #poolsHoja .hoja-caja{
+    height:100dvh; max-height:100dvh; border-radius:0;
+    display:flex; flex-direction:column;
+  }
+  #poolsHoja #listaPoolsHoja{flex:1; overflow-y:auto;}
   .modal-overlay.show{display:flex;}
   .modal{
     background:var(--bg-elev); border-top:1px solid var(--border); border-radius:20px 20px 0 0;
@@ -1663,7 +1674,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b84-bloquear-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b85-capas-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
