@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c02-preciowld-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c03-precios-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2363,11 +2363,31 @@
             try{
               const dr = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${r.address}`);
               const dd = await dr.json();
-              const pair = (dd.pairs || []).filter(pp => pp.chainId === 'worldchain')
-                .sort((a,b) => (b.liquidity?.usd||0) - (a.liquidity?.usd||0))[0];
-              if(pair && pair.priceUsd){
+              const pares = (dd.pairs || []).filter(pp => pp.chainId === 'worldchain');
+              const liq = p => (p.liquidity && p.liquidity.usd) || 0;
+              const yo = r.address.toLowerCase();
+
+              // `priceUsd` es el precio del token BASE del par. Si nuestro
+              // token está del lado de cotización, ese número es el del OTRO
+              // token: tomarlo sin mirar daba valores completamente errados.
+              let precio = null;
+              const comoBase = pares
+                .filter(p => p.baseToken && (p.baseToken.address || '').toLowerCase() === yo && p.priceUsd)
+                .sort((a, b) => liq(b) - liq(a))[0];
+              if(comoBase) precio = parseFloat(comoBase.priceUsd);
+
+              if(precio == null){
+                // se despeja: precio del base en dólares / precio del base en nuestro token
+                const comoQuote = pares
+                  .filter(p => p.quoteToken && (p.quoteToken.address || '').toLowerCase() === yo &&
+                               p.priceUsd && p.priceNative && parseFloat(p.priceNative) > 0)
+                  .sort((a, b) => liq(b) - liq(a))[0];
+                if(comoQuote) precio = parseFloat(comoQuote.priceUsd) / parseFloat(comoQuote.priceNative);
+              }
+
+              if(precio != null && isFinite(precio) && precio > 0){
                 const formatted = ethers.formatUnits(r.bal, r.decimals);
-                usdValue = parseFloat(formatted) * parseFloat(pair.priceUsd);
+                usdValue = parseFloat(formatted) * precio;
               }
             }catch(e){ /* sin precio disponible */ }
             return { ...r, usdValue };
