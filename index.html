@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b97-opseventos-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b98-rapido-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5194,8 +5194,20 @@
   let provLogs = null;
   async function rpcParaLogs(){
     if(provLogs) return provLogs;
+
+    // El que funcionó la última vez se prueba primero: así no hay que
+    // recorrer la lista entera en cada carga, que era lo que hacía
+    // esperar varios segundos antes de ver nada.
+    let orden = RPC_ENDPOINTS.slice();
+    try{
+      const guardado = localStorage.getItem('buzz_rpc_logs');
+      if(guardado && orden.includes(guardado)){
+        orden = [guardado].concat(orden.filter(u => u !== guardado));
+      }
+    }catch(e){}
+
     let ultimoError = null;
-    for(const url of RPC_ENDPOINTS){
+    for(const url of orden){
       try{
         const p = new ethers.JsonRpcProvider(url);
         const n = await Promise.race([
@@ -5209,6 +5221,7 @@
           new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
         ]);
         provLogs = p;
+        try{ localStorage.setItem('buzz_rpc_logs', url); }catch(e){}
         return p;
       }catch(e){ ultimoError = e; }
     }
@@ -5245,10 +5258,12 @@
 
   // Barre varios rangos en tandas, con una pausa entre cada una: los RPC
   // gratuitos miden peticiones por segundo y en paralelo agresivo rechazan.
-  async function barrerLogs(p, desde, hasta, curva){
+  // `avisar` se llama después de cada tanda con lo que se lleva encontrado,
+  // para poder pintar lo primero sin esperar a que termine todo el barrido.
+  async function barrerLogs(p, desde, hasta, curva, avisar){
     const tramos = [];
-    for(let d = desde; d <= hasta; d += VENTANA_BLOQUES){
-      tramos.push([d, Math.min(d + VENTANA_BLOQUES - 1, hasta)]);
+    for(let d = hasta; d >= desde; d -= VENTANA_BLOQUES){
+      tramos.push([Math.max(desde, d - VENTANA_BLOQUES + 1), d]);
     }
     let ops = [];
     for(let i = 0; i < tramos.length; i += 6){
@@ -5256,6 +5271,7 @@
       const res = await Promise.all(tanda.map(([a, b]) =>
         logsDeRango(p, a, b, curva).catch(() => [])));
       res.forEach(r => { ops = ops.concat(r); });
+      if(avisar) { try{ avisar(ops); }catch(e){} }
       if(i + 6 < tramos.length) await new Promise(r => setTimeout(r, 60));
     }
     return ops;
@@ -6134,8 +6150,32 @@
     try{
       const p = await rpcParaLogs();
       const ahora = await p.getBlockNumber();
-      const desde = Math.max(0, ahora - VENTANA_BLOQUES * 40);   // ~22 horas
-      const crudas = await barrerLogs(p, desde, ahora, t.curva);
+
+      const aOps = (lista) => lista.map(o => ({
+        hash: o.hash,
+        ts: Date.now() - (ahora - o.bloque) * 2000,   // ~2 s por bloque
+        tipo: o.tipo,
+        wallet: o.wallet,
+        tokens: o.tokens,
+        wld: o.wld,
+        precio: o.tokens > 0 ? o.wld / o.tokens : null
+      })).sort((x, y) => x.ts - y.ts);
+
+      // Primero las últimas ~4 horas, pintando a medida que llegan.
+      const pintando = (parciales) => {
+        tkOps = aOps(parciales);
+        if(tkPane === 'trades') renderTkPane();
+      };
+      let crudas = await barrerLogs(p, Math.max(0, ahora - VENTANA_BLOQUES * 12),
+                                    ahora, t.curva, pintando);
+
+      // Si hubo poca actividad reciente, se sigue buscando más atrás.
+      if(crudas.length < 15){
+        const masViejas = await barrerLogs(p,
+          Math.max(0, ahora - VENTANA_BLOQUES * 40),
+          Math.max(0, ahora - VENTANA_BLOQUES * 12 - 1), t.curva, null);
+        crudas = crudas.concat(masViejas);
+      }
 
       if(crudas.length){
         tkOps = crudas.map(o => ({
