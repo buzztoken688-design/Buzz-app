@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b98-rapido-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c01-grafico-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5188,6 +5188,42 @@
   // ============================================================
   const VENTANA_BLOQUES = 1000;   // lo máximo que acepta el RPC por consulta
 
+  // World App traduce dirección a nombre de usuario: es lo mismo que usa
+  // para enviar por nombre. Se consulta una vez por wallet y se recuerda,
+  // porque en una lista de operaciones la misma persona aparece muchas veces.
+  const nombresPorWallet = {};
+  async function nombreDe(dir){
+    const a = (dir || '').toLowerCase();
+    if(!a) return '';
+    if(a in nombresPorWallet) return nombresPorWallet[a];
+    nombresPorWallet[a] = '';                    // evita pedir dos veces a la vez
+    try{
+      const k = getMiniKit();
+      if(k && typeof k.getUserByAddress === 'function'){
+        const u = await k.getUserByAddress(dir);
+        if(u && u.username) nombresPorWallet[a] = u.username;
+      }
+    }catch(e){}
+    return nombresPorWallet[a];
+  }
+
+  // Nombre si lo tiene, dirección corta si no.
+  function comoSeLlama(dir){
+    const n = nombresPorWallet[(dir || '').toLowerCase()];
+    return n ? '@' + n : shortAddr(dir);
+  }
+
+  // Busca los nombres de una tanda de operaciones y repinta cuando llegan.
+  async function completarNombres(lista, alTerminar){
+    const dirs = [...new Set(lista.map(o => (o.wallet || '').toLowerCase()).filter(Boolean))]
+      .filter(a => !(a in nombresPorWallet));
+    if(!dirs.length) return;
+    for(let i = 0; i < dirs.length; i += 5){
+      await Promise.all(dirs.slice(i, i + 5).map(nombreDe));
+    }
+    if(alTerminar) { try{ alTerminar(); }catch(e){} }
+  }
+
   // No todos los RPC aceptan consultas de eventos: el de Alchemy, que es el
   // primero de la lista y el que usa el resto de la app, las rechaza. Por eso
   // se prueba uno por uno con una consulta de verdad y se usa el que responda.
@@ -5308,6 +5344,7 @@
       vivoOps = visibles.sort((x, y) => y.ts - x.ts).slice(0, 40);
       renderVivo();
       actualizarTicker();
+      completarNombres(vivoOps, () => { renderVivo(); actualizarTicker(); });
     }catch(e){
       console.error('vivo', e);
       if(el && !vivoOps.length){
@@ -5420,7 +5457,7 @@
   function filaTicker(o){
     return '<span class="punto ' + o.tipo + '"></span>' +
       (o.icon ? '<img src="' + o.icon + '" alt="">' : '') +
-      '<span class="w">' + esc(shortAddr(o.wallet)) + '</span>' +
+      '<span class="w">' + esc(comoSeLlama(o.wallet)) + '</span>' +
       '<span>' + (o.tipo === 'compra' ? 'compró' : 'vendió') + '</span>' +
       '<b>' + fmtGrande(o.cantidad) + ' $' + esc(o.simbolo) + '</b>' +
       '<span class="t">· ' + haceCuanto(o.ts) + '</span>';
@@ -5491,7 +5528,7 @@
         '<span class="vivo-punto ' + o.tipo + '"></span>' +
         (o.icon ? '<img src="' + o.icon + '" alt="" style="width:22px; height:22px; ' +
                   'border-radius:50%; object-fit:cover; flex-shrink:0;">' : '') +
-        '<span class="vivo-txt"><span class="w">' + esc(shortAddr(o.wallet)) + '</span> ' +
+        '<span class="vivo-txt"><span class="w">' + esc(comoSeLlama(o.wallet)) + '</span> ' +
           (o.tipo === 'compra' ? 'compró <b>' : 'vendió <b>') +
           fmtGrande(o.cantidad) + ' $' + esc(o.simbolo) + '</b>' +
         '</span>' +
@@ -6057,6 +6094,7 @@
   async function abrirLanzado(t){
     lzActual = t;
     lzSaldo  = 0n;
+    arrancarLatidoChart();
     tkOps = []; tkHolders = []; tkDatos = null; tkPane = 'stats'; tkErrores = [];
     goTab('lanzado');
 
@@ -6169,15 +6207,23 @@
       let crudas = await barrerLogs(p, Math.max(0, ahora - VENTANA_BLOQUES * 12),
                                     ahora, t.curva, pintando);
 
-      // Si hubo poca actividad reciente, se sigue buscando más atrás.
-      if(crudas.length < 15){
+      // Si hay pocas, se sigue buscando hacia atrás por tramos, hasta juntar
+      // una cantidad razonable o llegar a ~8 días. Antes solo miraba 22 horas
+      // y por eso desaparecían operaciones que antes sí se veían.
+      const TRAMOS_ATRAS = [40, 120, 240];        // ~22 h, ~2,7 días, ~5,5 días
+      let cubiertoHasta = 12;
+      for(const limite of TRAMOS_ATRAS){
+        if(crudas.length >= 25) break;
         const masViejas = await barrerLogs(p,
-          Math.max(0, ahora - VENTANA_BLOQUES * 40),
-          Math.max(0, ahora - VENTANA_BLOQUES * 12 - 1), t.curva, null);
+          Math.max(0, ahora - VENTANA_BLOQUES * limite),
+          Math.max(0, ahora - VENTANA_BLOQUES * cubiertoHasta - 1), t.curva,
+          (parciales) => pintando(crudas.concat(parciales)));
         crudas = crudas.concat(masViejas);
+        cubiertoHasta = limite;
       }
 
       if(crudas.length){
+        completarNombres(crudas, () => { if(tkPane === 'trades') renderTkPane(); });
         tkOps = crudas.map(o => ({
           hash: o.hash,
           ts: Date.now() - (ahora - o.bloque) * 2000,   // ~2 s por bloque
@@ -6389,7 +6435,7 @@
     const wV = new Set(ventas.map(o => o.wallet)).size;
 
     const top = (arr, cls) => arr.slice().sort((a, b) => b.wld - a.wld).slice(0, 5)
-      .map(o => '<div class="op-row"><span class="w">' + esc(shortAddr(o.wallet)) + '</span>' +
+      .map(o => '<div class="op-row"><span class="w">' + esc(comoSeLlama(o.wallet)) + '</span>' +
                 '<span class="m ' + cls + '">' + trimNum(o.wld.toFixed(2)) + ' WLD</span></div>').join('')
       || '<div class="lz-sub">—</div>';
 
@@ -6409,7 +6455,7 @@
       const f = new Date(o.ts);
       return '<div class="op-row">' +
         '<div><div class="m ' + o.tipo + '">' + (o.tipo === 'compra' ? 'Compra' : 'Venta') + '</div>' +
-          '<div class="t">' + esc(shortAddr(o.wallet)) + ' · ' +
+          '<div class="t">' + esc(comoSeLlama(o.wallet)) + ' · ' +
           f.toLocaleString('es', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</div></div>' +
         '<div style="text-align:right;"><div class="m">' + trimNum(o.wld.toFixed(3)) + ' WLD</div>' +
           '<div class="t">' + fmtGrande(o.tokens) + ' ' + esc(lzActual.simbolo) + '</div></div>' +
@@ -6479,11 +6525,65 @@
   }
 
   // ---------- gráfico ----------
+  // ============================================================
+  //  GRÁFICO EN VIVO
+  //  Antes se dibujaba UN PUNTO POR OPERACIÓN: si alguien vendía fuerte
+  //  quedaba un salto vertical, un rayón. Ahora el eje X es TIEMPO: un
+  //  punto cada 10 segundos con el precio de ese momento, así la línea
+  //  avanza pareja y los movimientos bajan o suben con pendiente.
+  //  La línea punteada marca el precio actual y la etiqueta va pegada al
+  //  borde derecho, como en los gráficos de los exchanges.
+  // ============================================================
+  const VELA_MS   = 10000;   // un punto cada 10 segundos
+  const VELAS_MAX = 60;      // 60 puntos = los últimos 10 minutos
+
+  let serieVivo = [];        // [{t, p}] del token abierto
+  let serieToken = null;     // de qué token es la serie
+  let latidoChart = null;
+
+  // Arma la serie a partir de las operaciones y la va extendiendo con el
+  // precio actual, para que el gráfico se mueva aunque nadie opere.
+  function actualizarSerie(){
+    if(!lzActual) return;
+
+    // si se cambió de token, se empieza de nuevo
+    if(serieToken !== lzActual.address){
+      serieToken = lzActual.address;
+      serieVivo = [];
+      const ops = opsGraficables();
+      const ahora = Date.now();
+      // se reparten las operaciones conocidas en sus casilleros de tiempo
+      const porCasillero = {};
+      ops.forEach(o => {
+        if(o.precio == null) return;
+        const c = Math.floor(o.ts / VELA_MS);
+        porCasillero[c] = o.precio;          // el último precio de ese tramo
+      });
+      const desde = Math.floor(ahora / VELA_MS) - VELAS_MAX + 1;
+      let ultimo = null;
+      for(let c = desde; c <= Math.floor(ahora / VELA_MS); c++){
+        if(porCasillero[c] != null) ultimo = porCasillero[c];
+        if(ultimo != null) serieVivo.push({ t: c * VELA_MS, p: ultimo });
+      }
+    }
+
+    const p = precioActual();
+    if(p == null) return;
+    const casilleroAhora = Math.floor(Date.now() / VELA_MS);
+    const ultimo = serieVivo[serieVivo.length - 1];
+
+    if(ultimo && Math.floor(ultimo.t / VELA_MS) === casilleroAhora){
+      ultimo.p = p;                                   // mismo tramo: se corrige
+    }else{
+      serieVivo.push({ t: casilleroAhora * VELA_MS, p });
+    }
+    if(serieVivo.length > VELAS_MAX) serieVivo = serieVivo.slice(-VELAS_MAX);
+  }
+
   function dibujarTkChart(){
     const cv = document.getElementById('tkChart');
     if(!cv || !lzActual) return;
     const dpr = window.devicePixelRatio || 1;
-    // el ancho de layout lo da el CSS, nunca el atributo: si no, crece en cada repintado
     const w = cv.clientWidth, h = cv.clientHeight;
     if(!w || !h) return;
     cv.width = Math.round(w * dpr);
@@ -6492,63 +6592,95 @@
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cx.clearRect(0, 0, w, h);
 
-    const ops = opsGraficables();
     const cap = document.getElementById('tkChartCap');
     if(cap) cap.textContent = lzActual.simbolo + ' / WLD';
 
-    // Con menos de dos operaciones no hay recorrido que dibujar, pero sí
-    // hay un precio: se muestra plano en vez de dejar el recuadro vacío.
-    if(ops.length < 2){
+    actualizarSerie();
+
+    if(serieVivo.length < 2){
       const p = precioActual();
-      if(p != null){
-        cx.strokeStyle = 'rgba(126,224,42,.55)';
-        cx.setLineDash([5, 5]);
-        cx.lineWidth = 2;
-        cx.beginPath(); cx.moveTo(8, h / 2); cx.lineTo(w - 8, h / 2); cx.stroke();
-        cx.setLineDash([]);
-        cx.fillStyle = 'rgba(255,255,255,.45)';
-        cx.font = '11px system-ui';
-        cx.textAlign = 'center';
-        cx.fillText(precioCorto(p) + ' WLD · ' +
-          (ops.length ? 'una sola operación' : 'todavía sin operaciones'), w / 2, h / 2 - 12);
-      }else{
-        cx.fillStyle = 'rgba(255,255,255,.25)';
-        cx.font = '12px system-ui';
-        cx.textAlign = 'center';
-        cx.fillText('Todavía no hay precio para graficar', w / 2, h / 2);
-      }
+      cx.fillStyle = 'rgba(255,255,255,.25)';
+      cx.font = '12px system-ui';
+      cx.textAlign = 'center';
+      cx.fillText(p != null ? 'Esperando movimiento…' : 'Todavía no hay precio para graficar',
+                  w / 2, h / 2);
       return;
     }
 
-    const pad = 8;
-    const t0 = ops[0].ts, t1 = ops[ops.length - 1].ts || (t0 + 1);
-    const precios = ops.map(o => o.precio);
+    // se reserva lugar a la derecha para la etiqueta del precio
+    const padL = 8, padR = 72, padT = 14, padB = 10;
+    const precios = serieVivo.map(s => s.p);
     let min = Math.min(...precios), max = Math.max(...precios);
-    if(max === min){ max = min * 1.05 || 1; min = min * 0.95; }
+    if(max === min){ max = min * 1.02 || 1; min = min * 0.98; }
+    const margen = (max - min) * 0.15;
+    min -= margen; max += margen;
 
-    // eje X por TIEMPO real, no por orden: siete operaciones en un minuto
-    // no pueden ocupar lo mismo que siete repartidas en un día
-    const px = (ts) => pad + ((ts - t0) / (t1 - t0 || 1)) * (w - pad * 2);
-    const py = (p)  => h - pad - ((p - min) / (max - min)) * (h - pad * 2);
+    const t0 = serieVivo[0].t;
+    const t1 = serieVivo[serieVivo.length - 1].t || (t0 + 1);
+    const px = (t) => padL + ((t - t0) / (t1 - t0 || 1)) * (w - padL - padR);
+    const py = (p) => h - padB - ((p - min) / (max - min)) * (h - padT - padB);
 
-    const sube = precios[precios.length - 1] >= precios[0];
+    const actual = precios[precios.length - 1];
+    const sube = actual >= precios[0];
     const color = sube ? '#7ee02a' : '#ff4d4d';
 
+    // relleno bajo la línea
     cx.beginPath();
-    ops.forEach((o, i) => { const X = px(o.ts), Y = py(o.precio); i ? cx.lineTo(X, Y) : cx.moveTo(X, Y); });
-    cx.strokeStyle = color; cx.lineWidth = 2; cx.lineJoin = 'round'; cx.stroke();
-
-    cx.lineTo(px(t1), h); cx.lineTo(px(t0), h); cx.closePath();
+    serieVivo.forEach((s, i) => { const X = px(s.t), Y = py(s.p); i ? cx.lineTo(X, Y) : cx.moveTo(X, Y); });
+    const finX = px(t1);
+    cx.lineTo(finX, h - padB); cx.lineTo(px(t0), h - padB); cx.closePath();
     const g = cx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, sube ? 'rgba(126,224,42,.28)' : 'rgba(255,77,77,.28)');
+    g.addColorStop(0, sube ? 'rgba(126,224,42,.25)' : 'rgba(255,77,77,.25)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     cx.fillStyle = g; cx.fill();
 
-    const ultX = px(t1), ultY = py(precios[precios.length - 1]);
-    cx.beginPath(); cx.arc(ultX, ultY, 6, 0, Math.PI * 2);
-    cx.fillStyle = sube ? 'rgba(126,224,42,.25)' : 'rgba(255,77,77,.25)'; cx.fill();
-    cx.beginPath(); cx.arc(ultX, ultY, 3, 0, Math.PI * 2);
+    // la línea
+    cx.beginPath();
+    serieVivo.forEach((s, i) => { const X = px(s.t), Y = py(s.p); i ? cx.lineTo(X, Y) : cx.moveTo(X, Y); });
+    cx.strokeStyle = color; cx.lineWidth = 2; cx.lineJoin = 'round'; cx.stroke();
+
+    // ---- precio actual: línea punteada de lado a lado + etiqueta ----
+    const yAct = py(actual);
+    cx.save();
+    cx.setLineDash([4, 4]);
+    cx.strokeStyle = sube ? 'rgba(126,224,42,.5)' : 'rgba(255,77,77,.5)';
+    cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(padL, yAct); cx.lineTo(w - padR + 2, yAct); cx.stroke();
+    cx.restore();
+
+    const texto = precioCorto(actual);
+    cx.font = '700 10.5px system-ui';
+    const anchoTxt = Math.max(cx.measureText(texto).width + 12, padR - 10);
+    const xEt = w - anchoTxt - 4;
+    const yEt = Math.max(9, Math.min(h - 9, yAct));
+    cx.fillStyle = color;
+    cx.beginPath();
+    if(cx.roundRect) cx.roundRect(xEt, yEt - 9, anchoTxt, 18, 5);
+    else cx.rect(xEt, yEt - 9, anchoTxt, 18);
+    cx.fill();
+    cx.fillStyle = '#0d0f08';
+    cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText(texto, xEt + anchoTxt / 2, yEt);
+
+    // el punto del precio, con un halo que late
+    const pulso = 4 + 2.5 * Math.abs(Math.sin(Date.now() / 500));
+    cx.beginPath(); cx.arc(finX, yAct, pulso, 0, Math.PI * 2);
+    cx.fillStyle = sube ? 'rgba(126,224,42,.28)' : 'rgba(255,77,77,.28)'; cx.fill();
+    cx.beginPath(); cx.arc(finX, yAct, 3, 0, Math.PI * 2);
     cx.fillStyle = color; cx.fill();
+  }
+
+  // El gráfico se repinta solo mientras la ficha está abierta: así la línea
+  // avanza y el punto late aunque nadie opere.
+  function arrancarLatidoChart(){
+    if(latidoChart) clearInterval(latidoChart);
+    latidoChart = setInterval(() => {
+      const sec = document.getElementById('screen-lanzado');
+      if(sec && sec.classList.contains('active')) dibujarTkChart();
+    }, 1000);
+  }
+  function pararLatidoChart(){
+    if(latidoChart){ clearInterval(latidoChart); latidoChart = null; }
   }
 
   // ---------- hoja de compra y venta ----------
