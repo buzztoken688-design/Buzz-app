@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c03-precios-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c04-fichaveloz-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -6183,11 +6183,17 @@
     if(datos && datos.saldo != null) lzSaldo = datos.saldo;
     pintarFicha();
 
-    await cargarOperaciones(t);
-    if(lzActual !== t) return;
-    pintarFicha();
+    // Los poseedores van PRIMERO y sin esperar: son una sola consulta al
+    // explorador. Las operaciones necesitan decenas de consultas de eventos
+    // y antes bloqueaban todo lo demás, por eso la ficha tardaba tanto.
+    cargarHolders(t).then(() => {
+      if(lzActual === t) pintarFicha();
+    }).catch(() => {});
 
-    cargarHolders(t);
+    // y las operaciones por detrás, pintando a medida que llegan
+    cargarOperaciones(t).then(() => {
+      if(lzActual === t) pintarFicha();
+    }).catch(() => {});
   }
 
   // Cada bloque por separado: si uno falla, los demás igual se dibujan
@@ -6346,6 +6352,11 @@
         valor: parseFloat(ethers.formatUnits(BigInt(h.value || '0'), t.decimals))
       })).filter(h => h.dir);
       if(lzActual === t){ renderTkPane(); renderTkCards(); }
+
+      // los nombres de usuario llegan después y se repinta cuando están
+      completarNombres(tkHolders.slice(0, 30).map(h => ({ wallet: h.dir })), () => {
+        if(lzActual === t && tkPane === 'holders') renderTkPane();
+      });
     }catch(e){}
   }
 
@@ -6523,7 +6534,7 @@
       const etiq = h.dir.toLowerCase() === curva ? ' <span class="lz-grad">curva</span>'
         : (h.dir.toLowerCase() === DIR_MUERTA.toLowerCase() ? ' <span class="lz-grad" style="color:var(--red); border-color:var(--red);">quemado</span>' : '');
       return '<div class="op-row">' +
-        '<div><span class="w">' + (i + 1) + '. ' + esc(shortAddr(h.dir)) + '</span>' + etiq + '</div>' +
+        '<div><span class="w">' + (i + 1) + '. ' + esc(comoSeLlama(h.dir)) + '</span>' + etiq + '</div>' +
         '<div style="text-align:right;"><div class="m">' + pct.toFixed(2) + '%</div>' +
           '<div class="t">' + fmtGrande(h.valor) + '</div></div>' +
       '</div>';
