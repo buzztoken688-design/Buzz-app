@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b95-sinairdrop-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b97-opseventos-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5188,6 +5188,34 @@
   // ============================================================
   const VENTANA_BLOQUES = 1000;   // lo máximo que acepta el RPC por consulta
 
+  // No todos los RPC aceptan consultas de eventos: el de Alchemy, que es el
+  // primero de la lista y el que usa el resto de la app, las rechaza. Por eso
+  // se prueba uno por uno con una consulta de verdad y se usa el que responda.
+  let provLogs = null;
+  async function rpcParaLogs(){
+    if(provLogs) return provLogs;
+    let ultimoError = null;
+    for(const url of RPC_ENDPOINTS){
+      try{
+        const p = new ethers.JsonRpcProvider(url);
+        const n = await Promise.race([
+          p.getBlockNumber(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))
+        ]);
+        // la prueba real: pedir eventos de un tramo chico
+        await Promise.race([
+          p.getLogs({ address: GEK_ROUTER, topics: [[TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA]],
+                      fromBlock: Math.max(0, n - 200), toBlock: n }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000))
+        ]);
+        provLogs = p;
+        return p;
+      }catch(e){ ultimoError = e; }
+    }
+    throw new Error('ningún RPC acepta consultas de eventos' +
+                    (ultimoError ? ': ' + (ultimoError.message || ultimoError) : ''));
+  }
+
   // Trae las operaciones de un rango de bloques, compras y ventas juntas.
   async function logsDeRango(p, desde, hasta, curva){
     const topics = [[TOPIC_GEK_COMPRA, TOPIC_GEK_VENTA]];
@@ -5238,7 +5266,7 @@
     try{
       if(!lanzados.length) await cargarLanzados();
 
-      const p = await getReadProvider();
+      const p = await rpcParaLogs();
       const ahora = await p.getBlockNumber();
       const desde = Math.max(0, ahora - VENTANA_BLOQUES * 12);   // ~4 horas
 
@@ -6091,23 +6119,26 @@
     }, ms));
   }
 
+  // ---------- datos del explorador ----------
+  //  Las operaciones salen de las transferencias DEL TOKEN contra la curva:
+  //  si el token sale de la curva es una compra, si entra es una venta.
+  //  Es la lectura que siempre funcionó; leerlas por eventos dejaba la
+  //  pestaña vacía cuando el RPC rechazaba las consultas.
   // ---------- operaciones del token ----------
-  //  Se leen los eventos Compra/Venta del GekRouter filtrados por la curva
-  //  de este token. Ahí viene la wallet REAL de cada persona y el WLD
-  //  exacto que movió. Antes se leían las transferencias del token contra
-  //  la curva, y en esas el que figura es el contrato que enrutó la
-  //  operación —el router o la factory—, nunca quien la hizo.
+  //  PRIMERO se leen los eventos Compra/Venta del GekRouter filtrados por la
+  //  curva: ahí viene la wallet REAL de cada persona y el WLD exacto.
+  //  Si ningún RPC acepta consultas de eventos, se cae al método viejo por
+  //  transferencias, donde la wallet que figura es la del contrato que
+  //  enrutó la operación — peor, pero mejor que dejar la pestaña vacía.
   async function cargarOperaciones(t){
     try{
-      const p = await getReadProvider();
+      const p = await rpcParaLogs();
       const ahora = await p.getBlockNumber();
       const desde = Math.max(0, ahora - VENTANA_BLOQUES * 40);   // ~22 horas
-
       const crudas = await barrerLogs(p, desde, ahora, t.curva);
-      if(!crudas.length){ tkOps = []; return; }
 
-      tkOps = crudas
-        .map(o => ({
+      if(crudas.length){
+        tkOps = crudas.map(o => ({
           hash: o.hash,
           ts: Date.now() - (ahora - o.bloque) * 2000,   // ~2 s por bloque
           tipo: o.tipo,
@@ -6115,12 +6146,59 @@
           tokens: o.tokens,
           wld: o.wld,
           precio: o.tokens > 0 ? o.wld / o.tokens : null
-        }))
-        .sort((x, y) => x.ts - y.ts);
+        })).sort((x, y) => x.ts - y.ts);
+        return;
+      }
     }catch(e){
-      tkErrores.push('operaciones: ' + (e && e.message ? e.message : e));
-      tkOps = [];
+      tkErrores.push('eventos: ' + (e && e.message ? e.message : e));
     }
+    await operacionesPorTransferencias(t);
+  }
+
+  // Respaldo por transferencias contra la curva.
+  async function operacionesPorTransferencias(t){
+    const urls = [
+      TK_EXPLORER + '/tokens/' + t.address + '/transfers',
+      TK_EXPLORER + '/addresses/' + t.curva + '/token-transfers?type=ERC-20'
+    ];
+    let items = null, ultimo = '';
+    for(const u of urls){
+      try{
+        const r = await fetch(u);
+        if(!r.ok){ ultimo = 'HTTP ' + r.status; continue; }
+        const d = await r.json();
+        if(Array.isArray(d.items)){ items = d.items; break; }
+        ultimo = 'el explorador devolvió otra cosa';
+      }catch(e){ ultimo = (e && e.message) ? e.message : String(e); }
+    }
+    if(items === null){
+      tkErrores.push('operaciones: ' + (ultimo || 'sin respuesta'));
+      tkOps = [];
+      return;
+    }
+
+    const curva = (t.curva || '').toLowerCase();
+    const tokenAddr = (t.address || '').toLowerCase();
+    const ops = [];
+    items.forEach(it => {
+      const ta = ((it.token && it.token.address) || '').toLowerCase();
+      if(ta && ta !== tokenAddr) return;
+      const de  = ((it.from && it.from.hash) || '').toLowerCase();
+      const a   = ((it.to   && it.to.hash)   || '').toLowerCase();
+      const val = it.total && it.total.value;
+      if(val == null) return;
+      const dec = Number((it.total && it.total.decimals) != null ? it.total.decimals : t.decimals);
+      let cant;
+      try{ cant = parseFloat(ethers.formatUnits(BigInt(val), dec)); }catch(e){ return; }
+      if(!(cant > 0)) return;
+      const ts = it.timestamp ? Date.parse(it.timestamp) : null;
+      if(!ts) return;
+      const hash = it.transaction_hash || it.tx_hash || '';
+      if(de === curva)     ops.push({ hash, ts, tipo:'compra', wallet:a,  tokens:cant, wld:0, precio:null });
+      else if(a === curva) ops.push({ hash, ts, tipo:'venta',  wallet:de, tokens:cant, wld:0, precio:null });
+    });
+
+    tkOps = ops.sort((x, y) => x.ts - y.ts);
   }
 
   async function cargarHolders(t){
