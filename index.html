@@ -1678,7 +1678,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b87-hojafija-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b88-vivoreal-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -5211,11 +5211,12 @@
             if(!(cant > 0)) return;
             const ts = it.timestamp ? Date.parse(it.timestamp) : null;
             if(!ts) return;
+            const hash = it.transaction_hash || it.tx_hash || '';
             if(de === curva){
-              ops.push({ ts, tipo: 'compra', wallet: a,  cantidad: cant,
+              ops.push({ ts, hash, tipo: 'compra', wallet: a,  cantidad: cant,
                          simbolo: t.simbolo, token: t.address, icon: t.icon || null });
             }else if(a === curva){
-              ops.push({ ts, tipo: 'venta',  wallet: de, cantidad: cant,
+              ops.push({ ts, hash, tipo: 'venta',  wallet: de, cantidad: cant,
                          simbolo: t.simbolo, token: t.address, icon: t.icon || null });
             }
           });
@@ -5226,6 +5227,12 @@
       vivoOps = [].concat.apply([], porToken)
         .sort((x, y) => y.ts - x.ts)
         .slice(0, 40);
+
+      // Igual que en la ficha del token: si la operación pasó por el
+      // contrato propio, la transferencia contra la curva muestra al
+      // CONTRATO y no a la persona. Se cruza por el hash con los eventos
+      // del contrato, que sí guardan la wallet real.
+      await ponerWalletsReales(vivoOps);
 
       renderVivo();
       actualizarTicker();
@@ -5259,6 +5266,43 @@
   }
 
   // ---------- ticker: un evento por vez, cruzando ----------
+  // Reemplaza la dirección del contrato por la del usuario que operó.
+  // Se comparte entre la franja en vivo y la ficha del token.
+  const ROUTERS_PROPIOS = new Set([
+    '0xe1e8530e130bdba54aa2c09145ef05be3c9d5905',
+    '0xaf4625052b42b568b3c3fb5c7a3250e9db6e4fcf',
+    '0xb58205cb2ce339578c44f3528f40a4e0b681360b',
+    '0x03221ffc811bdfc7600c7664460341069c5a83ff'
+  ]);
+  let mapaUsuariosPorHash = null;
+
+  async function ponerWalletsReales(lista){
+    if(!Array.isArray(lista) || !lista.length) return;
+    if(!lista.some(o => ROUTERS_PROPIOS.has((o.wallet || '').toLowerCase()))) return;
+
+    if(!mapaUsuariosPorHash){
+      mapaUsuariosPorHash = {};
+      for(const topic of [TOPIC_SWAP_V3, TOPIC_SWAP_V2]){
+        try{
+          const r = await fetch(EXPLORER_API +
+            '?module=logs&action=getLogs&fromBlock=0&toBlock=latest' +
+            '&address=' + BUZZ_SWAP + '&topic0=' + topic);
+          const d = await r.json();
+          (Array.isArray(d && d.result) ? d.result : []).forEach(ev => {
+            const t = ev.topics || [];
+            if(t.length < 2 || !ev.transactionHash) return;
+            mapaUsuariosPorHash[ev.transactionHash.toLowerCase()] = '0x' + t[1].slice(26);
+          });
+        }catch(e){}
+      }
+    }
+
+    lista.forEach(o => {
+      const real = mapaUsuariosPorHash[(o.hash || '').toLowerCase()];
+      if(real && ROUTERS_PROPIOS.has((o.wallet || '').toLowerCase())) o.wallet = real;
+    });
+  }
+
   const TICKER_MAX = 15;     // cuántas da vuelta la franja; la hoja las muestra todas
   let tickerIdx    = 0;
   let tickerUltimo = '';     // clave del evento más nuevo ya visto
