@@ -1067,6 +1067,9 @@
 
       <div class="card" id="tkPane"></div>
 
+      <button class="btn secondary" id="btnRepartir" style="margin-top:12px; display:none;"
+              onclick="abrirReparto()">🎁 Repartir / regalar</button>
+
       <div id="tkFallos" style="display:none; font-size:10.5px; line-height:1.6; color:var(--red);
            background:rgba(255,77,77,.08); border:1px solid rgba(255,77,77,.3);
            border-radius:11px; padding:10px 12px; margin-top:14px; word-break:break-word;"></div>
@@ -1528,6 +1531,40 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="repartoModal">
+  <div class="modal" style="position:relative; max-height:88vh; overflow-y:auto;">
+    <div class="close-x" onclick="closeModal('repartoModal')">✕</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title">🎁 Repartir <span id="rpSimbolo"></span></div>
+    <div class="crear-hint" style="margin-bottom:12px;">
+      Una línea por persona: la dirección y la cantidad, separadas por un
+      espacio o una coma.
+    </div>
+
+    <textarea class="field" id="rpLista" rows="6" spellcheck="false"
+      style="font-family:ui-monospace,monospace; font-size:12.5px; resize:vertical;"
+      placeholder="0xabc… 1000&#10;0xdef… 2500"></textarea>
+
+    <div class="field-label" style="margin-top:12px;">Plazo de custodia de quien recibe</div>
+    <select class="field" id="rpPlazo">
+      <option value="1" selected>24 horas</option>
+      <option value="2">7 días</option>
+      <option value="3">15 días</option>
+      <option value="4">1 mes</option>
+      <option value="5">3 meses</option>
+    </select>
+    <div class="crear-hint" style="margin-top:6px;">
+      Los recibe bloqueados y los reclama después desde su billetera. No hay
+      envío instantáneo: es el único canal que funciona sin registrar cada
+      token en World App.
+    </div>
+
+    <div class="logo-info" id="rpInfo" style="margin:12px 0 0;"></div>
+    <button class="btn" id="rpBtn" style="margin-top:12px;" onclick="confirmarReparto()">Repartir</button>
+    <div class="logo-info" id="rpErr" style="margin-top:8px; min-height:16px; color:var(--red);"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="montoModal">
   <div class="modal" style="position:relative;">
     <div class="close-x" onclick="closeModal('montoModal')">✕</div>
@@ -1678,7 +1715,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-b90-getlogs-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-b92-airdrop-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3673,6 +3710,114 @@
       }else if(!/rejected|cancel/i.test(msg)){
         showToast('No se pudo completar', true);
       }
+    }
+  }
+
+  // ============================================================
+  //  REPARTIR / REGALAR (airdrop)
+  //  Todo pasa por `bloquearPara` del GekLock: saca los tokens de quien
+  //  firma y se los acredita a otra dirección. Es el único canal que
+  //  funciona sin registrar cada token en World App, porque la dirección
+  //  de cada token es distinta y no se puede declarar de antemano.
+  // ============================================================
+  const LOCK_ABI = ['function bloquearPara(address token, uint256 monto, uint8 plazo, address para)'];
+
+  function abrirReparto(){
+    const t = lzActual;
+    if(!t){ showToast('Abrí primero un token', true); return; }
+    if(!userAddress){ showToast('Conectá tu wallet', true); return; }
+
+    document.getElementById('rpSimbolo').textContent = '$' + (t.simbolo || '');
+    document.getElementById('rpLista').value = '';
+    document.getElementById('rpErr').textContent = '';
+
+    const libre = repartoSaldo();
+    document.getElementById('rpInfo').textContent = libre > 0
+      ? 'Disponibles: ' + trimNum(libre) + ' ' + (t.simbolo || '')
+      : 'No tenés ' + (t.simbolo || 'ese token') + ' disponible.';
+    document.getElementById('rpBtn').disabled = libre <= 0;
+    openModal('repartoModal');
+  }
+
+  function repartoSaldo(){
+    const t = lzActual;
+    if(!t) return 0;
+    const enWallet = walletTokens.find(x => x.address &&
+      x.address.toLowerCase() === (t.address || '').toLowerCase());
+    return enWallet ? parseFloat(String(enWallet.balance).replace(/\./g, '').replace(',', '.')) || 0 : 0;
+  }
+
+  // Cada línea: una dirección y una cantidad. Se saca la dirección con un
+  // patrón y el RESTO es la cantidad: partir por comas rompía los decimales
+  // en español ("1000,5" se leía como 1000).
+  function leerReparto(texto){
+    const filas = [], errores = [];
+    String(texto).split(/\n+/).forEach((linea, i) => {
+      const l = linea.trim();
+      if(!l) return;
+      const m = l.match(/^(0x[0-9a-fA-F]{40})[\s,;]*(.*)$/);
+      if(!m){ errores.push('Línea ' + (i+1) + ': dirección inválida'); return; }
+      const cant = parseFloat(String(m[2]).replace(/\s/g, '').replace(',', '.'));
+      if(!(cant > 0)){ errores.push('Línea ' + (i+1) + ': falta la cantidad'); return; }
+      filas.push({ dir: m[1], cant });
+    });
+    return { filas, errores };
+  }
+
+  async function confirmarReparto(){
+    const t = lzActual;
+    if(!t) return;
+    const btn = document.getElementById('rpBtn');
+    const err = document.getElementById('rpErr');
+    err.textContent = '';
+
+    const plazo = parseInt(document.getElementById('rpPlazo').value, 10);
+    const libre = repartoSaldo();
+    const { filas, errores } = leerReparto(document.getElementById('rpLista').value || '');
+
+    if(errores.length){ err.innerHTML = errores.join('<br>'); return; }
+    if(!filas.length){ err.textContent = 'Escribí al menos una dirección con su cantidad.'; return; }
+
+    const total = filas.reduce((a, f) => a + f.cant, 0);
+    if(total > libre){
+      err.textContent = 'Sumás ' + trimNum(total) + ' pero solo tenés ' + trimNum(libre) + ' ' + (t.simbolo || '');
+      return;
+    }
+    // un lote grande lo rechaza World App por límite de gas
+    if(filas.length > 20){
+      err.textContent = 'Máximo 20 por vez. Dividilo en varias tandas.';
+      return;
+    }
+
+    const k = getMiniKit();
+    if(!k){ err.textContent = 'MiniKit no disponible'; return; }
+
+    const etiqueta = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Repartiendo…';
+    try{
+      const iface = new ethers.Interface(LOCK_ABI);
+      const dec = t.decimals != null ? Number(t.decimals) : 18;
+      const transactions = filas.map(f => ({
+        to: GEK_LOCK.toLowerCase(),
+        data: iface.encodeFunctionData('bloquearPara',
+          [t.address, ethers.parseUnits(String(f.cant), dec), plazo, f.dir])
+      }));
+
+      const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
+      const ok = (res && res.data && res.data.status === 'success')
+              || (res && res.finalPayload && res.finalPayload.status !== 'error');
+      if(ok){
+        showToast('🎁 ' + trimNum(total) + ' ' + (t.simbolo || '') + ' repartidos a ' + filas.length + ' wallet(s)');
+        closeModal('repartoModal');
+        setTimeout(loadBalances, 1800);
+      }else{
+        err.textContent = 'No se pudo repartir. Probá de nuevo.';
+      }
+    }catch(e){
+      const msg = (e && e.message) || '';
+      err.textContent = /rejected|cancel/i.test(msg) ? '' : (msg || 'Falló el reparto');
+    }finally{
+      btn.disabled = false; btn.textContent = etiqueta;
     }
   }
 
@@ -5985,6 +6130,9 @@
   async function abrirLanzado(t){
     lzActual = t;
     lzSaldo  = 0n;
+    // el reparto solo existe para tokens del launchpad: pasan por el lock
+    const bRep = document.getElementById('btnRepartir');
+    if(bRep) bRep.style.display = 'block';
     tkOps = []; tkHolders = []; tkDatos = null; tkPane = 'stats'; tkErrores = [];
     goTab('lanzado');
 
