@@ -969,10 +969,12 @@
 
         <div class="field-label" style="margin-top:18px;">Compra inicial en WLD (opcional)</div>
         <input class="field" id="crearCompra" inputmode="decimal" placeholder="0">
-        <div class="crear-hint">Hasta 1000 WLD. Queda en <b>custodia obligatoria</b>: no te llega líquido, lo reclamás cuando vence el plazo.</div>
+        <div class="crear-hint">Hasta 1000 WLD. Con esto <b>comprás tus propios tokens</b> al precio
+          de salida. Los WLD se gastan en la compra: lo que queda bloqueado son
+          <b>los tokens que recibís</b>, y los reclamás cuando vence el plazo.</div>
 
         <div id="crearPlazoWrap" style="display:none; margin-top:16px;">
-          <div class="field-label">Plazo de custodia</div>
+          <div class="field-label">Plazo de bloqueo de tus tokens</div>
           <div class="opt-row" id="crearPlazoRow">
             <button class="opt-btn active" data-plazo="0">24 h</button>
             <button class="opt-btn" data-plazo="1">7 d</button>
@@ -1678,7 +1680,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c04-fichaveloz-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c06-textos-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2290,7 +2292,37 @@
       // apareciendo dos o tres tokens nada más.
       // Ahora: primero solo el saldo de todos (1 consulta cada uno), y el
       // resto de los datos únicamente de los que tienen saldo.
+      // Primero se intenta con el contrato lector: una sola consulta en vez
+      // de una por token. Si por algo no responde, se cae al método viejo
+      // de leer token por token, que es lento pero seguro.
       async function readTokenInBatches(addresses, batchSize){
+        try{
+          const lector = new ethers.Contract(BUZZ_LECTOR, LECTOR_ABI, p);
+          const datos = await lector.tokensDe(userAddress, addresses, true);
+          if(datos && datos.length >= 0){
+            const conSaldo = datos.map(d => {
+              const addr = d.token.toLowerCase();
+              const known = KNOWN_TOKENS.find(t => t.address.toLowerCase() === addr);
+              return {
+                address: addr,
+                bal: d.saldo,
+                symbol: known ? known.symbol : (d.simbolo || '?'),
+                name:   known ? known.name   : (d.nombre  || 'Token'),
+                decimals: Number(d.decimales || 18),
+                isCore: addr === WLD_ADDRESS.toLowerCase() || addr === ZORP_TOKEN.toLowerCase(),
+                icon: known ? known.icon : null
+              };
+            });
+            const vistos = new Set(conSaldo.map(r => r.address));
+            const resto = addresses.filter(a => !vistos.has(a)).map(a => ({ address: a, bal: 0n }));
+            return conSaldo.concat(resto);
+          }
+        }catch(e){ /* el lector no respondió: se sigue por el camino largo */ }
+
+        return await readTokenInBatchesLento(addresses, batchSize);
+      }
+
+      async function readTokenInBatchesLento(addresses, batchSize){
         const conSaldo = [];
         const sinNada  = [];
 
@@ -3105,6 +3137,15 @@
   //  solo muestra lo que él dice y le manda las transacciones.
   // ============================================================
   const BUZZ_CLAIM = '0x6bFa319Cd1B5e014C1F1d8e6b826bccb78795206';
+
+  // Contrato lector: agrupa en UNA llamada lo que antes eran decenas.
+  // Solo lee, no mueve fondos, y por eso no hace falta declararlo en
+  // Contract Entrypoints.
+  const BUZZ_LECTOR = '0x8C494B08F820f59Cda81a76c9aE1c73F0ca9b601';
+  const LECTOR_ABI = [
+    'function tokensDe(address usuario, address[] tokens, bool soloConSaldo) view returns (tuple(address token, uint256 saldo, uint8 decimales, string simbolo, string nombre, bool ok)[])',
+    'function saldosDe(address usuario, address[] tokens) view returns (uint256[])'
+  ];
   const BUZZ_TOKEN = '0xf9f44AcEA8d3f7f34FF9766cbBe5293f11b719fE';
   const LINK_TELEGRAM = 'https://t.me/BuzzComunity';
   const LINK_X = 'https://x.com/buzztoken_world';
@@ -7552,8 +7593,8 @@
       'Tu comisión: <span class="tot">' + (crearFeeBps / 100) + '%</span><br>' +
       'Creación: <span class="tot">' + (crearEsGratis ? 'gratis' : trimNum(feeWld) + ' WLD') + '</span><br>' +
       (compra > 0
-        ? 'Compra inicial: <span class="tot">' + trimNum(compra) + ' WLD</span> en custodia ' +
-          PLAZOS_TXT[crearPlazo] + '<br>'
+        ? 'Compra inicial: <span class="tot">' + trimNum(compra) + ' WLD</span><br>' +
+          'Tus tokens quedan bloqueados <span class="tot">' + PLAZOS_TXT[crearPlazo] + '</span><br>'
         : '') +
       '<br>Pagás en total: <span class="tot">' + trimNum(total) + ' WLD</span>';
   }
