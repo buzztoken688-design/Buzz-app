@@ -1680,7 +1680,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c06-textos-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c08-rapida-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -2372,6 +2372,12 @@
 
       let results = await readTokenInBatches(candidateAddresses, 12);
 
+      // se piden los precios de TODOS los que tienen saldo de una sola vez,
+      // antes de recorrerlos uno por uno más abajo
+      try{
+        await cargarParesDe(results.filter(r => r.bal && r.bal > 0n).map(r => r.address));
+      }catch(e){}
+
       // los que no se pudieron leer se reintentan una vez, de a poco: una
       // lectura fallida no debería hacer desaparecer un token de la lista
       const fallidos = results.filter(r => r.bal === null).map(r => r.address);
@@ -2393,9 +2399,7 @@
           const batchResults = await Promise.all(batch.map(async (r) => {
             let usdValue = null;
             try{
-              const dr = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${r.address}`);
-              const dd = await dr.json();
-              const pares = (dd.pairs || []).filter(pp => pp.chainId === 'worldchain');
+              const pares = await paresDeToken(r.address);
               const liq = p => (p.liquidity && p.liquidity.usd) || 0;
               const yo = r.address.toLowerCase();
 
@@ -3144,7 +3148,10 @@
   const BUZZ_LECTOR = '0x8C494B08F820f59Cda81a76c9aE1c73F0ca9b601';
   const LECTOR_ABI = [
     'function tokensDe(address usuario, address[] tokens, bool soloConSaldo) view returns (tuple(address token, uint256 saldo, uint8 decimales, string simbolo, string nombre, bool ok)[])',
-    'function saldosDe(address usuario, address[] tokens) view returns (uint256[])'
+    'function saldosDe(address usuario, address[] tokens) view returns (uint256[])',
+    'function poolsDe(address staking, address usuario) view returns (tuple(uint256 id, address creador, address token, uint256 apyBps, uint256 diasBloqueo, uint256 recompensa, uint256 totalDepositado, uint8 estado, string nombre, string simboloToken, uint8 decimalesToken, uint256 miDeposito, uint256 miDesbloqueo, uint256 miGanancia)[])',
+    'function premiosDe(address claim, address usuario) view returns (tuple(bool puedeReclamar, uint256 faltaSegundos, uint256 racha, uint256 montoHoy, address miInvitador, uint256 misReferidos, uint256 premioInvitador, uint256 premioInvitado))',
+    'function misionesDe(address claim, address usuario) view returns (tuple(uint256 id, string nombre, uint256 premio, bool activa, bool reclamada)[])'
   ];
   const BUZZ_TOKEN = '0xf9f44AcEA8d3f7f34FF9766cbBe5293f11b719fE';
   const LINK_TELEGRAM = 'https://t.me/BuzzComunity';
@@ -3288,101 +3295,82 @@
     const elRef   = document.getElementById('refConteo');
     const lista   = document.getElementById('listaMisiones');
 
-    // el logo del token, de donde esté disponible
     try{
       const logo = await getGeckoIcon(BUZZ_TOKEN);
       const img = document.getElementById('claimLogo');
       if(img && logo){ img.src = logo; img.style.display = ''; }
     }catch(e){}
 
-    let p, c;
-    try{
-      p = await getReadProvider();
-      c = new ethers.Contract(BUZZ_CLAIM, CLAIM_ABI, p);
-    }catch(e){
+    let p;
+    try{ p = await getReadProvider(); }
+    catch(e){
       elRacha.textContent = 'No se pudo conectar con la cadena';
       lista.innerHTML = '<div class="empty-state">No se pudieron cargar las misiones</div>';
       return;
     }
 
-    // Cada lectura va por su cuenta: si una falla, las demás siguen.
-    // Antes iban todas juntas y un solo error dejaba la pantalla a medias.
-    const leer = async (fn, porDefecto) => { try{ return await fn(); }catch(e){ return porDefecto; } };
+    // DOS consultas al lector en vez de las doce sueltas de antes
+    const lector = new ethers.Contract(BUZZ_LECTOR, LECTOR_ABI, p);
+    let d = null, mis = [];
+    try{
+      [d, mis] = await Promise.all([
+        lector.premiosDe(BUZZ_CLAIM, userAddress),
+        lector.misionesDe(BUZZ_CLAIM, userAddress)
+      ]);
+    }catch(e){
+      elRacha.textContent = 'No se pudieron leer los premios';
+      lista.innerHTML = '<div class="empty-state">No se pudieron cargar las misiones</div>';
+      return;
+    }
 
-    const monto = await leer(() => c.montoDelDia(userAddress), null);
-    elMonto.textContent = monto != null ? trimNum(parseFloat(ethers.formatUnits(monto, 18))) : '—';
+    elMonto.textContent = trimNum(parseFloat(ethers.formatUnits(d.montoHoy, 18)));
 
-    const racha = Number(await leer(() => c.rachaDias(userAddress), 0n));
+    const racha = Number(d.racha);
     elRacha.textContent = racha > 0
       ? 'Llevás ' + racha + ' día(s) seguidos. A los 10 sube, a los 15 sube más.'
       : 'Entrá todos los días: a los 10 seguidos cobrás más, y a los 15 todavía más.';
 
-    const puede = await leer(() => c.puedeReclamar(userAddress), null);
-    if(puede === true){
+    if(d.puedeReclamar){
       btn.disabled = false; btn.textContent = 'Reclamar';
-    }else if(puede === false){
-      const seg = Number(await leer(() => c.faltaParaReclamar(userAddress), 0n));
+    }else{
+      const seg = Number(d.faltaSegundos);
       const h = Math.floor(seg / 3600), m = Math.floor((seg % 3600) / 60);
       btn.disabled = true;
       btn.textContent = 'Volvé en ' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm');
     }
 
-    const refs = Number(await leer(() => c.totalReferidos(userAddress), 0n));
+    const refs = Number(d.misReferidos);
     if(elRef) elRef.textContent = refs > 0 ? ' Ya invitaste a ' + refs + '.' : '';
 
-    // si todavía no tiene invitador, se le ofrece cargarlo a mano
-    const miInvitador = await leer(() => c.invitadoPor(userAddress), null);
-    const caja = document.getElementById('cargarInvitador');
-    if(caja){
-      const sinInvitador = !miInvitador || miInvitador === ethers.ZeroAddress;
-      caja.style.display = sinInvitador ? 'block' : 'none';
-    }
-    const est = document.getElementById('refEstado');
-    if(est && miInvitador && miInvitador !== ethers.ZeroAddress){
-      est.textContent = 'Te invitó ' + shortAddr(miInvitador);
-    }
-
-    // los montos salen del contrato, así que si los cambiás en Remix
-    // la pantalla se actualiza sola
-    const pTuyo  = await leer(() => c.premioInvitador(), null);
-    const pAmigo = await leer(() => c.premioInvitado(), null);
     const elTuyo  = document.getElementById('refPremioTuyo');
     const elAmigo = document.getElementById('refPremioAmigo');
-    if(elTuyo)  elTuyo.textContent  = pTuyo  != null ? '+' + trimNum(parseFloat(ethers.formatUnits(pTuyo, 18))) : '—';
-    if(elAmigo) elAmigo.textContent = pAmigo != null ? '+' + trimNum(parseFloat(ethers.formatUnits(pAmigo, 18))) : '—';
+    if(elTuyo)  elTuyo.textContent  = '+' + trimNum(parseFloat(ethers.formatUnits(d.premioInvitador, 18)));
+    if(elAmigo) elAmigo.textContent = '+' + trimNum(parseFloat(ethers.formatUnits(d.premioInvitado, 18)));
+
+    const caja = document.getElementById('cargarInvitador');
+    const sinInvitador = !d.miInvitador || d.miInvitador === ethers.ZeroAddress;
+    if(caja) caja.style.display = sinInvitador ? 'block' : 'none';
+    const est = document.getElementById('refEstado');
+    if(est && !sinInvitador) est.textContent = 'Te invitó ' + shortAddr(d.miInvitador);
 
     // ---------- misiones ----------
-    const cuantas = Number(await leer(() => c.cantidadMisiones(), 0n));
-    if(!cuantas){
-      lista.innerHTML = '<div class="empty-state">Todavía no hay misiones</div>';
+    const activas = (mis || []).filter(m => m.activa);
+    if(!activas.length){
+      lista.innerHTML = '<div class="empty-state">Todavía no hay misiones activas</div>';
       return;
     }
-    const hechas = await leer(() => c.misionesDeUsuario(userAddress), []);
+    lista.innerHTML = activas.map(m =>
+      '<div class="missions-card card">' +
+        '<div class="m-ic"><img data-ic="misiones" alt=""></div>' +
+        '<div class="m-info">' +
+          '<div class="m-title">' + esc(m.nombre) + '</div>' +
+          '<div class="m-reward">+' + trimNum(parseFloat(ethers.formatUnits(m.premio, 18))) + ' BUZZ</div>' +
+        '</div>' +
+        (m.reclamada
+          ? '<button class="m-btn" disabled>✓ Hecha</button>'
+          : '<button class="m-btn" data-mision="' + Number(m.id) + '">Ir</button>') +
+      '</div>').join('');
 
-    const filas = [];
-    for(let i = 0; i < cuantas; i++){
-      const m = await leer(() => c.misiones(i), null);
-      if(!m) continue;
-      const nombre = m[0], premio = m[1], activa = m[2];
-      if(!activa) continue;
-      const hecha = Array.isArray(hechas) && hechas[i] === true;
-      filas.push(
-        '<div class="missions-card card">' +
-          '<div class="m-ic"><img data-ic="misiones" alt=""></div>' +
-          '<div class="m-info">' +
-            '<div class="m-title">' + esc(nombre) + '</div>' +
-            '<div class="m-reward">+' + trimNum(parseFloat(ethers.formatUnits(premio, 18))) + ' BUZZ</div>' +
-          '</div>' +
-          (hecha
-            ? '<button class="m-btn" disabled>✓ Hecha</button>'
-            : '<button class="m-btn" data-mision="' + i + '">Ir</button>') +
-        '</div>');
-    }
-
-    lista.innerHTML = filas.length ? filas.join('')
-                                   : '<div class="empty-state">Todavía no hay misiones activas</div>';
-
-    // los botones se enganchan acá, sin meter comillas dentro del HTML
     lista.querySelectorAll('[data-mision]').forEach(b => {
       b.onclick = () => hacerMision(Number(b.dataset.mision),
                                     b.closest('.missions-card').querySelector('.m-title').textContent);
@@ -3526,80 +3514,78 @@
 
     try{
       const p = await getReadProvider();
-      const c = new ethers.Contract(BUZZ_STAKING, STAKING_ABI, p);
-      const total = Number(await c.cantidadPools());
 
-      if(!total){
-        cont.innerHTML = '<div class="empty-state">Todavía no hay pools</div>';
-        return;
-      }
+      // UNA sola consulta al lector trae todos los pools con el símbolo del
+      // token y lo que este usuario tiene en cada uno. Antes eran cuatro
+      // consultas por pool: el pool, el depósito, la ganancia y el desbloqueo.
+      const lector = new ethers.Contract(BUZZ_LECTOR, LECTOR_ABI, p);
+      const datos = await lector.poolsDe(BUZZ_STAKING, userAddress || ethers.ZeroAddress);
 
-      poolsCache = [];
-      for(let i = 0; i < total; i++){
-        try{
-          const d = await c.pools(i);
-          poolsCache.push({
-            id:i, creador:d[0], token:d[1], apyBps:d[2], dias:d[3],
-            recompensa:d[4], depositado:d[5], estado:Number(d[9]), nombre:d[10]
-          });
-        }catch(e){}
-      }
+      poolsCache = (datos || []).map(d => ({
+        id: Number(d.id),
+        creador: d.creador,
+        token: d.token,
+        apyBps: d.apyBps,
+        dias: d.diasBloqueo,
+        recompensa: d.recompensa,
+        depositado: d.totalDepositado,
+        estado: Number(d.estado),
+        nombre: d.nombre,
+        simbolo: d.simboloToken || '?',
+        decimales: Number(d.decimalesToken || 18),
+        miDeposito: d.miDeposito,
+        miDesbloqueo: Number(d.miDesbloqueo),
+        miGanancia: d.miGanancia
+      }));
 
-      // símbolos de los tokens que aparecen
-      await Promise.all([...new Set(poolsCache.map(x => x.token.toLowerCase()))].map(simboloDe));
+      // el símbolo ya viene del contrato, así que no hay que ir a buscarlo
+      poolsCache.forEach(x => {
+        const a = x.token.toLowerCase();
+        if(!(a in simboloCache)) simboloCache[a] = x.simbolo;
+        simboloCache[a + ':dec'] = x.decimales;
+      });
 
       const activos = poolsCache.filter(x => x.estado === 1);
       if(!activos.length){
         cont.innerHTML = '<div class="empty-state">Todavía no hay pools activos</div>';
       }else{
-        const filas = [];
-        for(const x of activos){
-          const sim = simboloCache[x.token.toLowerCase()] || '?';
-          const dec = decimalesDe(x.token);
-          let mio = { monto:0n, ganancia:0n, falta:0n };
-          if(userAddress){
-            try{
-              const d = await c.depositos(x.id, userAddress);
-              mio.monto = d[0];
-              mio.ganancia = await c.gananciaDe(x.id, userAddress);
-              mio.falta = await c.faltaDesbloqueo(x.id, userAddress);
-            }catch(e){}
-          }
-          const tengo = mio.monto > 0n;
-          filas.push(
-            '<div class="pool-fila">' +
-              '<div class="pool-top">' +
-                '<div class="tk-icon">' + esc(sim.slice(0,1)) + '</div>' +
-                '<div class="pool-nom"><b>' + esc(x.nombre || sim) + '</b>' +
-                  '<small>' + esc(sim) + ' · bloqueo ' + fmtDias(x.dias) + '</small></div>' +
-                '<div class="pool-apy">' + (Number(x.apyBps)/100) + '% APY</div>' +
-              '</div>' +
-              '<div class="pool-datos">' +
-                '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.recompensa, dec))) + '</b><small>QUEDA</small></div>' +
-                '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.depositado, dec))) + '</b><small>BLOQUEADO</small></div>' +
-                (tengo
-                  ? '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(mio.ganancia, dec))) + '</b><small>GANASTE</small></div>'
-                  : '') +
-              '</div>' +
+        const ahoraSeg = Math.floor(Date.now() / 1000);
+        cont.innerHTML = activos.map(x => {
+          const dec = x.decimales;
+          const tengo = x.miDeposito > 0n;
+          const falta = Math.max(0, x.miDesbloqueo - ahoraSeg);
+          return '<div class="pool-fila">' +
+            '<div class="pool-top">' +
+              '<div class="tk-icon">' + esc(x.simbolo.slice(0,1)) + '</div>' +
+              '<div class="pool-nom"><b>' + esc(x.nombre || x.simbolo) + '</b>' +
+                '<small>' + esc(x.simbolo) + ' · bloqueo ' + fmtDias(x.dias) + '</small></div>' +
+              '<div class="pool-apy">' + (Number(x.apyBps)/100) + '% APY</div>' +
+            '</div>' +
+            '<div class="pool-datos">' +
+              '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.recompensa, dec))) + '</b><small>QUEDA</small></div>' +
+              '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.depositado, dec))) + '</b><small>BLOQUEADO</small></div>' +
               (tengo
-                ? '<div class="crear-hint" style="margin-bottom:8px;">Tenés ' +
-                    trimNum(parseFloat(ethers.formatUnits(mio.monto, dec))) + ' ' + esc(sim) +
-                    ' · ' + (Number(mio.falta) > 0 ? 'se libera en ' + fmtEspera(mio.falta) : 'ya lo podés retirar') +
-                  '</div>'
+                ? '<div class="pool-dato"><b>' + trimNum(parseFloat(ethers.formatUnits(x.miGanancia, dec))) + '</b><small>GANASTE</small></div>'
                 : '') +
-              '<div class="pool-acciones">' +
-                '<button class="btn" data-pool-bloquear="' + x.id + '">Bloquear</button>' +
-                (tengo ? '<button class="btn secondary" data-pool-cobrar="' + x.id + '">Cobrar</button>' : '') +
-                (tengo && Number(mio.falta) === 0 ? '<button class="btn secondary" data-pool-retirar="' + x.id + '">Retirar</button>' : '') +
-              '</div>' +
-            '</div>');
-        }
-        cont.innerHTML = filas.join('');
+            '</div>' +
+            (tengo
+              ? '<div class="crear-hint" style="margin-bottom:8px;">Tenés ' +
+                  trimNum(parseFloat(ethers.formatUnits(x.miDeposito, dec))) + ' ' + esc(x.simbolo) +
+                  ' · ' + (falta > 0 ? 'se libera en ' + fmtEspera(falta) : 'ya lo podés retirar') +
+                '</div>'
+              : '') +
+            '<div class="pool-acciones">' +
+              '<button class="btn" data-pool-bloquear="' + x.id + '">Bloquear</button>' +
+              (tengo ? '<button class="btn secondary" data-pool-cobrar="' + x.id + '">Cobrar</button>' : '') +
+              (tengo && falta === 0 ? '<button class="btn secondary" data-pool-retirar="' + x.id + '">Retirar</button>' : '') +
+            '</div>' +
+          '</div>';
+        }).join('');
         enganchesPools(cont);
       }
 
-      await pintarMisPools(c);
-      await pintarAdminPools(c);
+      pintarMisPools();
+      pintarAdminPools();
 
     }catch(e){
       cont.innerHTML = '<div class="empty-state">No se pudo leer el contrato de pools</div>';
@@ -3618,7 +3604,7 @@
   }
 
   // ---------- los pools que creó esta wallet ----------
-  async function pintarMisPools(c){
+  function pintarMisPools(){
     const card  = document.getElementById('misPoolsCard');
     const lista = document.getElementById('listaMisPools');
     if(!card || !userAddress) return;
@@ -3650,7 +3636,7 @@
   }
 
   // ---------- los que esperan tu aprobación ----------
-  async function pintarAdminPools(c){
+  function pintarAdminPools(){
     const card  = document.getElementById('adminPoolsCard');
     const lista = document.getElementById('listaAdminPools');
     if(!card) return;
@@ -4883,6 +4869,41 @@
       lanzadosDirs = lanzadosDirs || [];
     }
     return lanzadosDirs;
+  }
+
+  // DexScreener acepta hasta 30 direcciones separadas por coma en una sola
+  // consulta. Antes se preguntaba token por token: con diez tokens con saldo
+  // eran diez peticiones seguidas, y eso pesaba tanto como las de la cadena.
+  const paresCache = { datos: {}, at: 0 };
+  async function cargarParesDe(direcciones){
+    const faltan = direcciones.map(a => a.toLowerCase())
+      .filter(a => !(a in paresCache.datos));
+    if(!faltan.length) return;
+
+    for(let i = 0; i < faltan.length; i += 30){
+      const lote = faltan.slice(i, i + 30);
+      try{
+        const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + lote.join(','));
+        const d = await r.json();
+        const todos = (d.pairs || []).filter(p => p.chainId === 'worldchain');
+        lote.forEach(a => { paresCache.datos[a] = []; });
+        todos.forEach(p => {
+          const b = ((p.baseToken  && p.baseToken.address)  || '').toLowerCase();
+          const q = ((p.quoteToken && p.quoteToken.address) || '').toLowerCase();
+          if(paresCache.datos[b]) paresCache.datos[b].push(p);
+          if(paresCache.datos[q]) paresCache.datos[q].push(p);
+        });
+      }catch(e){
+        lote.forEach(a => { paresCache.datos[a] = []; });
+      }
+    }
+    paresCache.at = Date.now();
+  }
+
+  async function paresDeToken(addr){
+    const a = (addr || '').toLowerCase();
+    if(!(a in paresCache.datos)) await cargarParesDe([a]);
+    return paresCache.datos[a] || [];
   }
 
   let wldUsdCache = { valor: null, at: 0 };
