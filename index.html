@@ -1680,7 +1680,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c08-rapida-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c09-principales-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3146,6 +3146,7 @@
   // Solo lee, no mueve fondos, y por eso no hace falta declararlo en
   // Contract Entrypoints.
   const BUZZ_LECTOR = '0x8C494B08F820f59Cda81a76c9aE1c73F0ca9b601';
+  const USDC_ADDRESS = '0x79A02482A880bCE3F13e09Da970dC34db4CD24d1';
   const LECTOR_ABI = [
     'function tokensDe(address usuario, address[] tokens, bool soloConSaldo) view returns (tuple(address token, uint256 saldo, uint8 decimales, string simbolo, string nombre, bool ok)[])',
     'function saldosDe(address usuario, address[] tokens) view returns (uint256[])',
@@ -4178,7 +4179,30 @@
 
   function openTokenPicker(target){
     pickerTarget = target;
-    pickerLista = walletTokens.length ? walletTokens : KNOWN_TOKENS;
+    // Estos tres aparecen SIEMPRE, tengas saldo o no. Antes la lista era
+    // solo lo que tenías, así que al quedarte sin WLD desaparecía de las
+    // opciones y no había forma de volver a comprarlo.
+    const PRINCIPALES = [
+      { address: WLD_ADDRESS,  symbol: 'WLD',  name: 'Worldcoin', decimals: 18 },
+      { address: USDC_ADDRESS, symbol: 'USDC', name: 'USD Coin',  decimals: 6  },
+      { address: BUZZ_TOKEN,   symbol: 'BUZZ', name: 'BuzzToken', decimals: 18 }
+    ];
+
+    const base = walletTokens.length ? walletTokens.slice() : KNOWN_TOKENS.slice();
+    const yaEstan = new Set(base.map(t => (t.address || '').toLowerCase()));
+
+    PRINCIPALES.forEach(p => {
+      const a = p.address.toLowerCase();
+      if(yaEstan.has(a)) return;
+      const conocido = KNOWN_TOKENS.find(k => k.address.toLowerCase() === a);
+      base.unshift(Object.assign({}, p, {
+        address: a,
+        balance: 0,
+        icon: conocido ? conocido.icon : null
+      }));
+    });
+
+    pickerLista = base;
     const buscador = document.getElementById('pickerSearch');
     buscador.value = '';
     renderPicker('');
@@ -4357,15 +4381,23 @@
   document.getElementById('sendTokenBtn').onclick = ()=>openTokenPicker('send');
 
   function flipSwap(){
-    if(!toToken) return;
+    if(!toToken || !fromToken) return;
     const tmp = fromToken;
     fromToken = toToken;
     toToken = tmp;
-    document.getElementById('fromTokenBtn').textContent = fromToken.symbol + ' ▾';
-    document.getElementById('toTokenBtn').textContent = toToken.symbol + ' ▾';
+
+    // se dibujan igual que cuando se elige del selector: con logo y saldo.
+    // Antes se ponía solo el símbolo como texto y no se refrescaban ni el
+    // saldo ni la cotización, así que parecía que el botón no hacía nada.
+    document.getElementById('fromTokenBtn').innerHTML = tkSelectHtml(fromToken);
+    document.getElementById('toTokenBtn').innerHTML   = tkSelectHtml(toToken);
+    document.getElementById('fromBalLbl').textContent = 'Saldo: ' + trimNum(fromToken.balance || 0);
+    document.getElementById('toBalLbl').textContent   = 'Saldo: ' + trimNum(toToken.balance || 0);
+
     document.getElementById('fromAmount').value = '';
     document.getElementById('toAmount').value = '';
     updateSwapButton();
+    refreshQuote();
   }
 
   function updateSwapButton(){
