@@ -1680,7 +1680,7 @@
   // ============================================================
   //  BUZZ WALLET — configuración
   // ============================================================
-  const BUILD_ID = 'buzz-c09-principales-' + new Date().toISOString().slice(0,16);
+  const BUILD_ID = 'buzz-c11-panel-' + new Date().toISOString().slice(0,16);
   const BUZZ_APP_ID   = 'app_815d5d92a5f26a91cfa25bc3a5bc3364'; // Mini App "BuzzWallet" (RP ID rp_a5d9d4a1e78ea6f0) — reemplaza al App ID viejo de ZorpWallet
   const CHAIN_ID       = 480; // World Chain
 
@@ -3844,16 +3844,27 @@
         total += (pend || []).length;
       }catch(e){}
 
-      // tokens que la gente agregó y todavía no cargaste en el portal
+      // tokens sin cargar en el portal: los que agregó la gente MÁS los
+      // creados en el launchpad, que también hay que declarar
       try{
-        const dirs = await direccionesAgregadas();
         const iniciales = new Set(
           [WLD_ADDRESS, ZORP_TOKEN].concat(CURATED_TOKEN_ADDRESSES).map(a => a.toLowerCase())
         );
-        const candidatos = (dirs || []).filter(a => !iniciales.has(a));
-        if(candidatos.length){
+        const dirs = await direccionesAgregadas();
+        const candidatos = new Set((dirs || []).filter(a => !iniciales.has(a)));
+
+        try{
+          if(!lanzados.length) await cargarLanzados();
+          lanzados.forEach(t => {
+            const a = (t.address || '').toLowerCase();
+            if(a && !iniciales.has(a)) candidatos.add(a);
+          });
+        }catch(e){}
+
+        const lista = [...candidatos];
+        if(lista.length){
           const reg = new ethers.Contract(BUZZ_REGISTRO, REGISTRO_ABI, p);
-          const est = await reg.estanCargados(candidatos);
+          const est = await reg.estanCargados(lista);
           total += est.filter(x => x !== true).length;
         }
       }catch(e){}
@@ -4082,17 +4093,37 @@
         const quien = ('0x' + t[2].slice(26)).toLowerCase();
         if(iniciales.has(token) || vistos.has(token)) return;
         vistos.add(token);
-        adminTokens.push({ token, quien });
+        adminTokens.push({ token, quien, origen: 'agregado' });
       });
 
+      // Los tokens CREADOS EN EL LAUNCHPAD también hay que declararlos en el
+      // portal, pero no pasan por el contrato de swap y por eso nunca
+      // aparecían acá: nacen en la factory y no emiten ese evento.
+      try{
+        if(!lanzados.length) await cargarLanzados();
+        lanzados.forEach(t => {
+          const a = (t.address || '').toLowerCase();
+          if(!a || iniciales.has(a) || vistos.has(a)) return;
+          vistos.add(a);
+          adminTokens.push({
+            token: a,
+            quien: t.creador || '',
+            origen: 'launchpad',
+            nombre: t.nombre || '?',
+            simbolo: t.simbolo || '?'
+          });
+        });
+      }catch(e){ /* si el launchpad no responde, se sigue con los agregados */ }
+
       if(!adminTokens.length){
-        lista.innerHTML = '<div class="empty-state">Todavía nadie agregó un token.</div>';
+        lista.innerHTML = '<div class="empty-state">No hay tokens pendientes.</div>';
         return;
       }
 
       // nombre y símbolo de cada uno, leídos de la cadena
       const p = await getReadProvider();
       await Promise.all(adminTokens.map(async (x) => {
+        if(x.nombre && x.nombre !== '?') return;   // los del launchpad ya lo traen
         try{
           const c = new ethers.Contract(x.token, ERC20_ABI, p);
           const [n, sim] = await Promise.all([c.name(), c.symbol()]);
@@ -4122,8 +4153,9 @@
           '<div class="tk-info">' +
             '<div class="tk-name">' + esc(x.nombre) + ' · ' + esc(x.simbolo) + '</div>' +
             '<div class="tk-sub" style="word-break:break-all;">' + esc(x.token) + '</div>' +
-            '<div class="tk-sub" style="color:var(--text-faint);">lo agregó ' +
-              esc(shortAddr(x.quien)) + '</div>' +
+            '<div class="tk-sub" style="color:var(--text-faint);">' +
+              (x.origen === 'launchpad' ? '🚀 creado en el launchpad' : 'lo agregó ' + esc(shortAddr(x.quien))) +
+            '</div>' +
           '</div>' +
           '<button class="mini-add" data-marcar="' + esc(x.token) + '">Ya lo agregué</button>' +
         '</div>'
@@ -5226,9 +5258,26 @@
   }
 
   document.getElementById('btnDestacar').onclick = async ()=>{
-    if(destEnviando || !lzActual || !destPlanes) return;
     const out = document.getElementById('destOut');
+
+    // Antes esta comprobación cortaba EN SILENCIO: si faltaba algún dato el
+    // botón no hacía nada y no avisaba nada, y parecía que estaba roto.
+    if(destEnviando){ out.textContent = 'Esperá, hay una transacción en curso…'; return; }
+    if(!lzActual){ out.textContent = 'Abrí primero el token que querés destacar.'; return; }
+
+    if(!destPlanes){
+      out.textContent = 'Cargando los planes…';
+      try{ await leerPlanesDestacado(); }catch(e){}
+      if(!destPlanes){
+        out.textContent = 'No se pudieron leer los planes. Probá de nuevo en un momento.';
+        return;
+      }
+      renderPlanes();
+    }
+
     const plan = destPlanes[destPlanSel];
+    if(!plan){ out.textContent = 'Elegí un plan.'; return; }
+
     const k = getMiniKit();
     if(!k){ showToast('MiniKit no disponible', true); return; }
 
