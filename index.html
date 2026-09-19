@@ -745,6 +745,11 @@
   .launch-btn:active{transform:scale(.98);}
   .launch-btn img{width:26px; height:26px; object-fit:contain;}
 
+  /* ---- fila que comparte dos launch-btn lado a lado ---- */
+  .launch-row{display:flex; gap:10px; margin:14px 0 4px;}
+  .launch-row .launch-btn{width:auto; flex:1; margin:0; padding:14px 8px; font-size:13.5px; gap:7px;}
+  .launch-row .launch-btn img{width:22px; height:22px;}
+
   /* ---- botón llamativo: BuzzFarm (juego vinculado) ---- */
   .game-btn{
     display:flex; align-items:center; justify-content:center; gap:10px;
@@ -907,12 +912,14 @@
         <button class="qa-btn-plain" onclick="openModal('receiveModal')"><img data-ic="recibir" alt="Recibir"><span class="qa-lbl">Recibir</span></button>
       </div>
 
-      <button class="launch-btn" style="margin-bottom:10px;" onclick="abrirPoolsHoja()">
-        <img data-ic="panal" alt=""><span>Pools de staking</span>
-      </button>
-      <button class="launch-btn" onclick="goTab('crear')">
-        <img id="launchIcon" data-ic="herramientas" alt=""><span>Lanzar un token</span>
-      </button>
+      <div class="launch-row">
+        <button class="launch-btn" onclick="abrirPoolsHoja()">
+          <img data-ic="panal" alt=""><span>Pools de staking</span>
+        </button>
+        <button class="launch-btn" onclick="goTab('crear')">
+          <img id="launchIcon" data-ic="herramientas" alt=""><span>Lanzar un token</span>
+        </button>
+      </div>
 
       <button class="game-btn" onclick="abrirBuzzFarm()">
         <span class="emoji">🐝</span><span>Visitá BuzzFarm</span>
