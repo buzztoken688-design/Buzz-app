@@ -117,6 +117,26 @@
     font-size:18px;
   }
   .brand .name{font-weight:700; font-size:16px; letter-spacing:.3px;}
+  .lang-btn{
+    width:24px; height:24px; border-radius:50%; background:var(--panel);
+    border:1px solid var(--border); color:var(--text-dim); font-size:12px;
+    display:flex; align-items:center; justify-content:center; line-height:1;
+    padding:0; margin-left:2px; flex:0 0 auto;
+  }
+  .lang-btn:active{border-color:var(--buzz);}
+  .lang-menu{
+    display:none; position:absolute; top:54px; left:18px; z-index:50;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:12px;
+    padding:6px; min-width:150px; box-shadow:0 8px 24px rgba(0,0,0,.4);
+  }
+  .lang-menu.open{display:block;}
+  .lang-menu button{
+    display:block; width:100%; text-align:left; background:transparent; border:none;
+    color:var(--text); font-family:inherit; font-size:13px; padding:9px 10px;
+    border-radius:8px;
+  }
+  .lang-menu button:active{background:var(--panel);}
+  .lang-menu button.active{color:var(--buzz); font-weight:700;}
   .user-chip{
     display:flex; align-items:center; gap:6px; background:var(--panel);
     border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:13px; color:var(--text-dim);
@@ -874,6 +894,12 @@
     <div class="brand">
       <div class="mark"><img data-ic="inicio" alt="BUZZ"></div>
       <div class="name">BUZZ</div>
+      <button id="langBtn" class="lang-btn" aria-label="Cambiar idioma" onclick="toggleLangMenu()">🌐</button>
+      <div id="langMenu" class="lang-menu">
+        <button data-lang="es" onclick="setLang('es')">🇪🇸 Español</button>
+        <button data-lang="en" onclick="setLang('en')">🇬🇧 English</button>
+        <button data-lang="pt" onclick="setLang('pt')">🇧🇷 Português</button>
+      </div>
     </div>
     <div class="user-chip"><span class="dot"></span><span id="userTag">—</span></div>
   </header>
@@ -2317,12 +2343,61 @@
       // Primero se intenta con el contrato lector: una sola consulta en vez
       // de una por token. Si por algo no responde, se cae al método viejo
       // de leer token por token, que es lento pero seguro.
+      // Revisa que lo que mandó el contrato lector tenga sentido antes de
+      // confiar en eso. Un RPC público bajo carga (más común en redes
+      // móviles inestables) a veces no tira error pero devuelve datos
+      // incompletos o mal armados: menos filas de las pedidas, direcciones
+      // que no coinciden con lo que se preguntó, o varias filas marcadas
+      // como "ok" pero con símbolo y nombre vacíos a la vez. Antes esto se
+      // aceptaba igual y el token aparecía sin saldo o directamente no
+      // aparecía. Ahora, si algo de esto pasa, se descarta todo el lote y
+      // se cae al método lento (token por token), que es más lento pero
+      // no inventa datos.
+      function datosDelLectorSonConfiables(datos, addressesPedidas){
+        if(!datos || !Array.isArray(datos)) return false;
+        // el contrato debería devolver una fila por cada dirección pedida
+        if(datos.length !== addressesPedidas.length) return false;
+
+        const pedidasSet = new Set(addressesPedidas.map(a => a.toLowerCase()));
+        let filasOkConDatosVacios = 0;
+        let filasOk = 0;
+
+        for(const d of datos){
+          if(!d || !d.token) return false;
+          const addr = d.token.toLowerCase();
+          // cada fila tiene que corresponder a una dirección que realmente pedimos
+          if(!pedidasSet.has(addr)) return false;
+
+          if(d.ok){
+            filasOk++;
+            // una fila "ok" sin símbolo NI nombre es sospechosa: probablemente
+            // el RPC devolvió la llamada a medias
+            const sinSimbolo = !d.simbolo || d.simbolo.trim() === '';
+            const sinNombre  = !d.nombre  || d.nombre.trim()  === '';
+            if(sinSimbolo && sinNombre) filasOkConDatosVacios++;
+          }
+        }
+
+        // si hay filas marcadas ok pero ninguna trae símbolo/nombre, y había
+        // más de un par de ellas, es más probable que sea un problema del
+        // RPC que que justo todos esos tokens no tengan metadata
+        if(filasOk > 0 && filasOkConDatosVacios === filasOk && filasOk > 2) return false;
+
+        return true;
+      }
+
       async function readTokenInBatches(addresses, batchSize){
         try{
           const lector = new ethers.Contract(BUZZ_LECTOR, LECTOR_ABI, p);
           const datos = await lector.tokensDe(userAddress, addresses, true);
-          if(datos && datos.length >= 0){
-            const conSaldo = datos.map(d => {
+
+          if(!datosDelLectorSonConfiables(datos, addresses)){
+            return await readTokenInBatchesLento(addresses, batchSize);
+          }
+
+          const conSaldo = datos
+            .filter(d => d.ok) // se descartan las filas que el propio contrato marcó como no válidas
+            .map(d => {
               const addr = d.token.toLowerCase();
               const known = KNOWN_TOKENS.find(t => t.address.toLowerCase() === addr);
               return {
@@ -2335,10 +2410,15 @@
                 icon: known ? known.icon : null
               };
             });
-            const vistos = new Set(conSaldo.map(r => r.address));
-            const resto = addresses.filter(a => !vistos.has(a)).map(a => ({ address: a, bal: 0n }));
-            return conSaldo.concat(resto);
+          const vistos = new Set(conSaldo.map(r => r.address));
+          // las direcciones que el contrato marcó como no-ok, o que faltaron,
+          // se reintentan por el camino lento en vez de darlas por saldo 0
+          const resto = addresses.filter(a => !vistos.has(a.toLowerCase()));
+          if(resto.length){
+            const reintentoResto = await readTokenInBatchesLento(resto, batchSize);
+            return conSaldo.concat(reintentoResto);
           }
+          return conSaldo;
         }catch(e){ /* el lector no respondió: se sigue por el camino largo */ }
 
         return await readTokenInBatchesLento(addresses, batchSize);
@@ -8590,5 +8670,554 @@
     window.__miniKitLoaded = false;
   }
 </script>
+
+<script>
+// ===================== BUZZ WALLET · Motor de traducción =====================
+// Traduce el texto visible de la app (ES <-> EN <-> PT) sin tocar botones,
+// posiciones, estilos ni la lógica del resto de la aplicación.
+(function(){
+// ===================== BUZZ WALLET · i18n =====================
+// Diccionario de traducción ES -> EN / PT.
+// Traduce SOLO texto visible (por coincidencia exacta o parcial de frases).
+// No modifica estructura, botones, ids, ni lógica de la app.
+const BUZZ_I18N = {
+  en: {
+    // Header / navegación
+    "BUZZ": "BUZZ",
+    "Inicio": "Home",
+    "Swap": "Swap",
+    "Tendencias": "Trending",
+    "Launchpad": "Launchpad",
+    "Perfil": "Profile",
+    "Conectar billetera": "Connect wallet",
+
+    // Pantalla Inicio
+    "Balance total estimado": "Estimated total balance",
+    "Enviar": "Send",
+    "Recibir": "Receive",
+    "Pools de staking": "Staking pools",
+    "Lanzar un token": "Launch a token",
+    "Visitá BuzzFarm": "Visit BuzzFarm",
+    "Tus tokens": "Your tokens",
+    "Actualizar": "Refresh",
+    "+ Agregar": "+ Add",
+    "Cargando tokens…": "Loading tokens…",
+    "Anuncio": "Ad",
+
+    // Crear token
+    "Lanzar un token": "Launch a token",
+    "Leyendo la factory…": "Reading the factory…",
+    "Nombre": "Name",
+    "Símbolo": "Symbol",
+    "Logo": "Logo",
+    "sin": "no",
+    "logo": "logo",
+    "Elegir imagen": "Choose image",
+    "Se achica a 128 px para que entre en la cadena.": "It's shrunk to 128px so it fits on-chain.",
+    "Descripción": "Description",
+    "De qué se trata tu token": "What your token is about",
+    "Telegram (opcional)": "Telegram (optional)",
+    "X (opcional)": "X (optional)",
+    "Web (opcional)": "Website (optional)",
+    "Tu comisión como creador": "Your fee as creator",
+    "Se suma al 1% de plataforma. El comprador paga entre 1.25% y 2% en total.": "This is added to the 1% platform fee. The buyer pays between 1.25% and 2% total.",
+    "Compra inicial en WLD (opcional)": "Initial purchase in WLD (optional)",
+    "Hasta 1000 WLD. Con esto": "Up to 1000 WLD. With this",
+    "comprás tus propios tokens": "you buy your own tokens",
+    "al precio": "at the",
+    "de salida. Los WLD se gastan en la compra: lo que queda bloqueado son": "launch price. The WLD is spent on the purchase: what stays locked is",
+    "los tokens que recibís": "the tokens you receive",
+    ", y los reclamás cuando vence el plazo.": ", and you claim them once the term ends.",
+    "Plazo de bloqueo de tus tokens": "Lock period for your tokens",
+    "24 h": "24 h",
+    "7 d": "7 d",
+    "15 d": "15 d",
+    "1 mes": "1 month",
+    "3 meses": "3 months",
+    "Crear token": "Create token",
+
+    // Tokens lanzados / launchpad
+    "Esperando operaciones…": "Waiting for trades…",
+    "Top por Market Cap": "Top by Market Cap",
+    "en WLD": "in WLD",
+    "Cargando…": "Loading…",
+    "Todos los tokens": "All tokens",
+    "↻ Actualizar": "↻ Refresh",
+    "Tendencia": "Trending",
+    "Nuevos": "New",
+    "Graduados": "Graduated",
+
+    // Ficha de token
+    "Mercado": "Market",
+    "👑 Destacar": "👑 Feature",
+    "Historial de precio": "Price history",
+    "● en vivo": "● live",
+    "1H": "1H", "6H": "6H", "24H": "24H", "Todo": "All",
+    "Datos": "Data",
+    "Operaciones": "Trades",
+    "Poseedores": "Holders",
+    "Info": "Info",
+    "Comprar": "Buy",
+    "Vender": "Sell",
+    "Operaciones en vivo": "Live trades",
+    "Tocá cualquiera para abrir ese token y operarlo.": "Tap any of them to open and trade that token.",
+    "Escuchando operaciones…": "Listening for trades…",
+    "Destacar token": "Feature token",
+    "El token aparece arriba de todo en el Launchpad. El orden lo decide lo pagado: quien más invierte va primero. Se puede volver a comprar para acumular.": "The token appears at the very top of the Launchpad. Order is decided by how much is paid: whoever invests more goes first. You can buy again to add up.",
+    "Destacar": "Feature",
+
+    // Trade sheet
+    "Pagas": "You pay",
+    "Saldo: 0": "Balance: 0",
+    "Recibes (estimado)": "You receive (estimated)",
+    "Elegir ▾": "Choose ▾",
+    "Ingresá un monto": "Enter an amount",
+    "Comisión BUZZ: 0.50% · se convierte a $BUZZ y va a la tesorería": "BUZZ fee: 0.50% · converted to $BUZZ and sent to the treasury",
+    "En tendencia ahora · pares con WLD": "Trending now · WLD pairs",
+
+    // Publicitar
+    "Publicitar en BUZZ": "Advertise on BUZZ",
+    "Leyendo precios…": "Reading prices…",
+    "Paquete": "Package",
+    "24 horas": "24 hours",
+    "1 semana": "1 week",
+    "1 mes": "1 month",
+    "Se paga en $ZORP. El anuncio entra en la rotación del banner de Inicio hasta que vence.": "Paid in $ZORP. The ad enters the Home banner rotation until it expires.",
+    "Título": "Title",
+    "Nombre de tu proyecto": "Your project's name",
+    "Una línea corta": "A short line",
+    "Texto del botón": "Button text",
+    "Ver": "View",
+    "Logo (URL, opcional)": "Logo (URL, optional)",
+    "A dónde lleva": "Where it leads",
+    "Vista previa": "Preview",
+    "Publicar": "Publish",
+
+    // Tendencias
+    "Del Launchpad": "From the Launchpad",
+    "Ver todos →": "View all →",
+    "Tokens con par WLD en World Chain": "Tokens with a WLD pair on World Chain",
+    "por volumen y actividad de las últimas 24 h": "by volume and activity in the last 24 h",
+    "Cargando tokens en tendencia…": "Loading trending tokens…",
+
+    // Perfil
+    "Tu cuenta": "Your account",
+    "Tokens que agregaste": "Tokens you added",
+    "Podés cambiarles el logo y las redes las veces que quieras, sin volver a pagar.": "You can change their logo and social links as many times as you like, without paying again.",
+    "Pools esperando aprobación": "Pools awaiting approval",
+    "Al aprobar, los 5.000 BUZZ del creador se queman. Al rechazar, se le devuelve todo.": "On approval, the creator's 5,000 BUZZ is burned. On rejection, everything is returned.",
+    "Tokens que agregaron los usuarios": "Tokens added by users",
+    "Cada uno pagó 3 WLD. Para que se puedan operar tienen que estar también en Contract Entrypoints del Developer Portal.": "Each one paid 3 WLD. For them to be tradable they also need to be added to Contract Entrypoints in the Developer Portal.",
+    "Buscar": "Search",
+    "Copiar todas": "Copy all",
+    "Bloqueá tokens y ganá": "Lock tokens and earn",
+    "Bloqueás por el plazo del pool y ganás según su APY. Pasado el plazo retirás cuando quieras, y si lo dejás sigue generando.": "You lock for the pool's term and earn based on its APY. Once the term is over you can withdraw whenever you want, and if you leave it, it keeps earning.",
+    "Tocá ↻ para cargar": "Tap ↻ to load",
+    "➕ Abrir mi propio pool": "➕ Open my own pool",
+    "Pools que creaste": "Pools you created",
+    "Reclamo diario": "Daily claim",
+    "Reclamar": "Claim",
+    "Invitá y ganá": "Invite and earn",
+    "PARA VOS": "FOR YOU",
+    "PARA TU AMIGO": "FOR YOUR FRIEND",
+    "Copiá tu enlace y pasáselo a quien quieras. Cuando esa persona lo abra y conecte su wallet,": "Copy your link and share it with anyone. When that person opens it and connects their wallet,",
+    "el premio se acredita solo": "the reward is credited automatically",
+    ": no tiene que escribir tu nombre ni buscar nada.": ": they don't need to type your name or look anything up.",
+    "Se paga una vez por persona, la primera vez que entra.": "Paid once per person, the first time they enter.",
+    "📤 Copiar mi enlace": "📤 Copy my link",
+    "¿Alguien te invitó y no se registró solo? Poné su wallet acá y cobran los dos.": "Did someone invite you and it wasn't registered automatically? Enter their wallet here and you'll both get paid.",
+    "Confirmar invitador": "Confirm inviter",
+    "Misiones": "Missions",
+    "Historial": "History",
+    "Tus movimientos": "Your activity",
+
+    // Modales
+    "Elegí un token": "Choose a token",
+    "Nombre, símbolo o pegar la dirección": "Name, symbol, or paste the address",
+    "➕ Agregar un token": "➕ Add a token",
+    "Bloquear": "Lock",
+    "MAX": "MAX",
+    "Confirmar": "Confirm",
+    "Abrir un pool": "Open a pool",
+    "Depositás tu token como recompensa y elegís cuánto pagar por año.": "You deposit your token as the reward and choose how much to pay per year.",
+    "Cuesta": "It costs",
+    "5.000 BUZZ": "5,000 BUZZ",
+    ", que se queman al aprobarse.": ", which is burned upon approval.",
+    "Mínimo de recompensa:": "Minimum reward:",
+    "500.000": "500,000",
+    "del token.": "of the token.",
+    "Dirección del token": "Token address",
+    "Nombre del pool": "Pool name",
+    "Ej: Staking de MITOKEN": "E.g.: Staking for MYTOKEN",
+    "APY anual": "Annual APY",
+    "Días de bloqueo": "Lock days",
+    "Recompensa a depositar": "Reward to deposit",
+    "Solicitar pool": "Request pool",
+    "Agregar un token": "Add a token",
+    "Cualquiera puede sumar un token de World Chain a la lista de la app.": "Anyone can add a World Chain token to the app's list.",
+    "Cuesta 3 WLD y queda disponible para todos los usuarios.": "It costs 3 WLD and becomes available to all users.",
+    "Puede tardar unas horas en quedar operativo, porque hace falta una habilitación manual del lado de World App.": "It can take a few hours to become operational, since a manual approval is needed on World App's side.",
+    "Dirección del contrato": "Contract address",
+    "Logo (opcional)": "Logo (optional)",
+    "Agregar por 3 WLD": "Add for 3 WLD",
+    "Token": "Token",
+    "Dirección o usuario": "Address or username",
+    "Cantidad": "Amount",
+    "Tu dirección": "Your address",
+    "Copiar dirección": "Copy address",
+
+    // Ficha de token (modal)
+    "Actividad 24 h": "24h activity",
+    "Compras": "Buys",
+    "Ventas": "Sells",
+    "Tu saldo": "Your balance",
+    "Valor de tu saldo": "Value of your balance",
+    "Suministro total": "Total supply",
+    "Par principal": "Main pair",
+    "DEX": "DEX",
+    "Pool creado": "Pool created",
+    "📊 GeckoTerminal": "📊 GeckoTerminal",
+    "🙈 Ocultar de mi wallet": "🙈 Hide from my wallet",
+    "Precio": "Price",
+    "Precio en WLD": "Price in WLD",
+    "Capitalización (MC)": "Market cap (MC)",
+    "FDV": "FDV",
+    "Liquidez": "Liquidity",
+    "Volumen 24 h": "24h volume",
+    "Variación": "Change",
+  },
+
+  pt: {
+    "BUZZ": "BUZZ",
+    "Inicio": "Início",
+    "Swap": "Swap",
+    "Tendencias": "Tendências",
+    "Launchpad": "Launchpad",
+    "Perfil": "Perfil",
+    "Conectar billetera": "Conectar carteira",
+
+    "Balance total estimado": "Saldo total estimado",
+    "Enviar": "Enviar",
+    "Recibir": "Receber",
+    "Pools de staking": "Pools de staking",
+    "Lanzar un token": "Lançar um token",
+    "Visitá BuzzFarm": "Visite o BuzzFarm",
+    "Tus tokens": "Seus tokens",
+    "Actualizar": "Atualizar",
+    "+ Agregar": "+ Adicionar",
+    "Cargando tokens…": "Carregando tokens…",
+    "Anuncio": "Anúncio",
+
+    "Leyendo la factory…": "Lendo a factory…",
+    "Nombre": "Nome",
+    "Símbolo": "Símbolo",
+    "Logo": "Logo",
+    "sin": "sem",
+    "logo": "logo",
+    "Elegir imagen": "Escolher imagem",
+    "Se achica a 128 px para que entre en la cadena.": "É reduzida para 128px para caber na blockchain.",
+    "Descripción": "Descrição",
+    "De qué se trata tu token": "Do que se trata seu token",
+    "Telegram (opcional)": "Telegram (opcional)",
+    "X (opcional)": "X (opcional)",
+    "Web (opcional)": "Site (opcional)",
+    "Tu comisión como creador": "Sua taxa como criador",
+    "Se suma al 1% de plataforma. El comprador paga entre 1.25% y 2% en total.": "Isso se soma à taxa de 1% da plataforma. O comprador paga entre 1,25% e 2% no total.",
+    "Compra inicial en WLD (opcional)": "Compra inicial em WLD (opcional)",
+    "Hasta 1000 WLD. Con esto": "Até 1000 WLD. Com isso",
+    "comprás tus propios tokens": "você compra seus próprios tokens",
+    "al precio": "ao preço",
+    "de salida. Los WLD se gastan en la compra: lo que queda bloqueado son": "de lançamento. O WLD é gasto na compra: o que fica bloqueado são",
+    "los tokens que recibís": "os tokens que você recebe",
+    ", y los reclamás cuando vence el plazo.": ", e você os resgata quando o prazo vence.",
+    "Plazo de bloqueo de tus tokens": "Prazo de bloqueio dos seus tokens",
+    "24 h": "24 h",
+    "7 d": "7 d",
+    "15 d": "15 d",
+    "1 mes": "1 mês",
+    "3 meses": "3 meses",
+    "Crear token": "Criar token",
+
+    "Esperando operaciones…": "Aguardando operações…",
+    "Top por Market Cap": "Top por Market Cap",
+    "en WLD": "em WLD",
+    "Cargando…": "Carregando…",
+    "Todos los tokens": "Todos os tokens",
+    "↻ Actualizar": "↻ Atualizar",
+    "Tendencia": "Tendência",
+    "Nuevos": "Novos",
+    "Graduados": "Formados",
+
+    "Mercado": "Mercado",
+    "👑 Destacar": "👑 Destacar",
+    "Historial de precio": "Histórico de preço",
+    "● en vivo": "● ao vivo",
+    "1H": "1H", "6H": "6H", "24H": "24H", "Todo": "Tudo",
+    "Datos": "Dados",
+    "Operaciones": "Operações",
+    "Poseedores": "Detentores",
+    "Info": "Info",
+    "Comprar": "Comprar",
+    "Vender": "Vender",
+    "Operaciones en vivo": "Operações ao vivo",
+    "Tocá cualquiera para abrir ese token y operarlo.": "Toque em qualquer um para abrir esse token e negociá-lo.",
+    "Escuchando operaciones…": "Ouvindo operações…",
+    "Destacar token": "Destacar token",
+    "El token aparece arriba de todo en el Launchpad. El orden lo decide lo pagado: quien más invierte va primero. Se puede volver a comprar para acumular.": "O token aparece no topo do Launchpad. A ordem é decidida pelo valor pago: quem investe mais fica em primeiro. Você pode comprar novamente para acumular.",
+    "Destacar": "Destacar",
+
+    "Pagas": "Você paga",
+    "Saldo: 0": "Saldo: 0",
+    "Recibes (estimado)": "Você recebe (estimado)",
+    "Elegir ▾": "Escolher ▾",
+    "Ingresá un monto": "Digite um valor",
+    "Comisión BUZZ: 0.50% · se convierte a $BUZZ y va a la tesorería": "Taxa BUZZ: 0,50% · convertida em $BUZZ e enviada para a tesouraria",
+    "En tendencia ahora · pares con WLD": "Em alta agora · pares com WLD",
+
+    "Publicitar en BUZZ": "Anunciar no BUZZ",
+    "Leyendo precios…": "Lendo preços…",
+    "Paquete": "Pacote",
+    "24 horas": "24 horas",
+    "1 semana": "1 semana",
+    "Se paga en $ZORP. El anuncio entra en la rotación del banner de Inicio hasta que vence.": "Pago em $ZORP. O anúncio entra na rotação do banner da Início até expirar.",
+    "Título": "Título",
+    "Nombre de tu proyecto": "Nome do seu projeto",
+    "Una línea corta": "Uma linha curta",
+    "Texto del botón": "Texto do botão",
+    "Ver": "Ver",
+    "Logo (URL, opcional)": "Logo (URL, opcional)",
+    "A dónde lleva": "Para onde leva",
+    "Vista previa": "Pré-visualização",
+    "Publicar": "Publicar",
+
+    "Del Launchpad": "Do Launchpad",
+    "Ver todos →": "Ver todos →",
+    "Tokens con par WLD en World Chain": "Tokens com par WLD na World Chain",
+    "por volumen y actividad de las últimas 24 h": "por volume e atividade das últimas 24 h",
+    "Cargando tokens en tendencia…": "Carregando tokens em alta…",
+
+    "Tu cuenta": "Sua conta",
+    "Tokens que agregaste": "Tokens que você adicionou",
+    "Podés cambiarles el logo y las redes las veces que quieras, sin volver a pagar.": "Você pode trocar o logo e as redes quantas vezes quiser, sem pagar novamente.",
+    "Pools esperando aprobación": "Pools aguardando aprovação",
+    "Al aprobar, los 5.000 BUZZ del creador se queman. Al rechazar, se le devuelve todo.": "Ao aprovar, os 5.000 BUZZ do criador são queimados. Ao rejeitar, tudo é devolvido.",
+    "Tokens que agregaron los usuarios": "Tokens adicionados pelos usuários",
+    "Cada uno pagó 3 WLD. Para que se puedan operar tienen que estar también en Contract Entrypoints del Developer Portal.": "Cada um pagou 3 WLD. Para poderem ser negociados, também precisam estar em Contract Entrypoints no Developer Portal.",
+    "Buscar": "Buscar",
+    "Copiar todas": "Copiar todas",
+    "Bloqueá tokens y ganá": "Bloqueie tokens e ganhe",
+    "Bloqueás por el plazo del pool y ganás según su APY. Pasado el plazo retirás cuando quieras, y si lo dejás sigue generando.": "Você bloqueia pelo prazo do pool e ganha conforme seu APY. Após o prazo, você retira quando quiser, e se deixar, continua rendendo.",
+    "Tocá ↻ para cargar": "Toque em ↻ para carregar",
+    "➕ Abrir mi propio pool": "➕ Abrir meu próprio pool",
+    "Pools que creaste": "Pools que você criou",
+    "Reclamo diario": "Resgate diário",
+    "Reclamar": "Resgatar",
+    "Invitá y ganá": "Convide e ganhe",
+    "PARA VOS": "PARA VOCÊ",
+    "PARA TU AMIGO": "PARA SEU AMIGO",
+    "Copiá tu enlace y pasáselo a quien quieras. Cuando esa persona lo abra y conecte su wallet,": "Copie seu link e envie para quem quiser. Quando essa pessoa abrir e conectar a carteira,",
+    "el premio se acredita solo": "o prêmio é creditado automaticamente",
+    ": no tiene que escribir tu nombre ni buscar nada.": ": ela não precisa digitar seu nome nem procurar nada.",
+    "Se paga una vez por persona, la primera vez que entra.": "Pago uma vez por pessoa, na primeira vez que entra.",
+    "📤 Copiar mi enlace": "📤 Copiar meu link",
+    "¿Alguien te invitó y no se registró solo? Poné su wallet acá y cobran los dos.": "Alguém te convidou e não foi registrado automaticamente? Coloque a carteira dessa pessoa aqui e os dois recebem.",
+    "Confirmar invitador": "Confirmar convite",
+    "Misiones": "Missões",
+    "Historial": "Histórico",
+    "Tus movimientos": "Suas movimentações",
+
+    "Elegí un token": "Escolha um token",
+    "Nombre, símbolo o pegar la dirección": "Nome, símbolo ou cole o endereço",
+    "➕ Agregar un token": "➕ Adicionar um token",
+    "Bloquear": "Bloquear",
+    "MAX": "MAX",
+    "Confirmar": "Confirmar",
+    "Abrir un pool": "Abrir um pool",
+    "Depositás tu token como recompensa y elegís cuánto pagar por año.": "Você deposita seu token como recompensa e escolhe quanto pagar por ano.",
+    "Cuesta": "Custa",
+    "5.000 BUZZ": "5.000 BUZZ",
+    ", que se queman al aprobarse.": ", que são queimados na aprovação.",
+    "Mínimo de recompensa:": "Recompensa mínima:",
+    "500.000": "500.000",
+    "del token.": "do token.",
+    "Dirección del token": "Endereço do token",
+    "Nombre del pool": "Nome do pool",
+    "Ej: Staking de MITOKEN": "Ex: Staking do MEUTOKEN",
+    "APY anual": "APY anual",
+    "Días de bloqueo": "Dias de bloqueio",
+    "Recompensa a depositar": "Recompensa a depositar",
+    "Solicitar pool": "Solicitar pool",
+    "Agregar un token": "Adicionar um token",
+    "Cualquiera puede sumar un token de World Chain a la lista de la app.": "Qualquer pessoa pode adicionar um token da World Chain à lista do app.",
+    "Cuesta 3 WLD y queda disponible para todos los usuarios.": "Custa 3 WLD e fica disponível para todos os usuários.",
+    "Puede tardar unas horas en quedar operativo, porque hace falta una habilitación manual del lado de World App.": "Pode levar algumas horas para ficar operacional, pois é necessária uma aprovação manual do lado do World App.",
+    "Dirección del contrato": "Endereço do contrato",
+    "Logo (opcional)": "Logo (opcional)",
+    "Agregar por 3 WLD": "Adicionar por 3 WLD",
+    "Token": "Token",
+    "Dirección o usuario": "Endereço ou usuário",
+    "Cantidad": "Quantidade",
+    "Tu dirección": "Seu endereço",
+    "Copiar dirección": "Copiar endereço",
+
+    "Actividad 24 h": "Atividade 24 h",
+    "Compras": "Compras",
+    "Ventas": "Vendas",
+    "Tu saldo": "Seu saldo",
+    "Valor de tu saldo": "Valor do seu saldo",
+    "Suministro total": "Fornecimento total",
+    "Par principal": "Par principal",
+    "DEX": "DEX",
+    "Pool creado": "Pool criado",
+    "📊 GeckoTerminal": "📊 GeckoTerminal",
+    "🙈 Ocultar de mi wallet": "🙈 Ocultar da minha carteira",
+    "Precio": "Preço",
+    "Precio en WLD": "Preço em WLD",
+    "Capitalización (MC)": "Capitalização (MC)",
+    "FDV": "FDV",
+    "Liquidez": "Liquidez",
+    "Volumen 24 h": "Volume 24 h",
+    "Variación": "Variação",
+  }
+};
+
+
+  const LANG_KEY = 'buzz_lang';
+  let currentLang = localStorage.getItem(LANG_KEY) || 'es';
+
+  // Guarda el texto original de cada nodo la primera vez que se ve,
+  // para poder volver a español o re-traducir sin perder datos.
+  const ORIG = new WeakMap();
+
+  function shouldSkip(node){
+    const p = node.parentElement;
+    if (!p) return true;
+    const tag = p.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return true;
+    return false;
+  }
+
+  function translateText(txt, lang){
+    if (!txt) return txt;
+    const trimmed = txt.trim();
+    if (!trimmed) return txt;
+    if (lang === 'es') return txt;
+    const dict = BUZZ_I18N[lang];
+    if (!dict) return txt;
+
+    // 1) coincidencia exacta (incluyendo espacios originales)
+    if (dict[trimmed] !== undefined) {
+      return txt.replace(trimmed, dict[trimmed]);
+    }
+    // 2) reemplazo de subfrases conocidas dentro de textos compuestos
+    let out = txt;
+    let changed = false;
+    // ordenar claves más largas primero para evitar reemplazos parciales incorrectos
+    const keys = Object.keys(dict).sort((a,b)=> b.length - a.length);
+    for (const k of keys) {
+      if (k.length < 3) continue; // evita falsos positivos en palabras muy cortas
+      if (out.includes(k)) {
+        out = out.split(k).join(dict[k]);
+        changed = true;
+      }
+    }
+    return changed ? out : txt;
+  }
+
+  function walk(node, lang){
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (shouldSkip(node)) return;
+      if (!ORIG.has(node)) ORIG.set(node, node.nodeValue);
+      const original = ORIG.get(node);
+      node.nodeValue = translateText(original, lang);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    // no entrar en árboles de iconos (son solo <img>, sin texto) — inocuo igual
+    for (const child of Array.from(node.childNodes)) {
+      walk(child, lang);
+    }
+    // atributos traducibles comunes (placeholder, aria-label, title) en inputs/botones
+    if (node.hasAttribute && node.hasAttribute('placeholder')) {
+      const key = 'ph:' + (node.id || '');
+      if (!ORIG.has(node)) ORIG.set(node, {});
+      const store = ORIG.get(node);
+      if (typeof store === 'object') {
+        if (store.placeholder === undefined) store.placeholder = node.getAttribute('placeholder');
+        node.setAttribute('placeholder', translateText(store.placeholder, lang));
+      }
+    }
+  }
+
+  function applyLang(lang){
+    const root = document.body;
+    walk(root, lang);
+    document.documentElement.lang = lang;
+    localStorage.setItem(LANG_KEY, lang);
+    currentLang = lang;
+    document.querySelectorAll('#langMenu button').forEach(b=>{
+      b.classList.toggle('active', b.dataset.lang === lang);
+    });
+  }
+
+  // Traduce contenido agregado dinámicamente (listas de tokens, historial, etc.)
+  const observer = new MutationObserver((mutations)=>{
+    if (currentLang === 'es') return;
+    for (const m of mutations) {
+      m.addedNodes.forEach(n=>{
+        if (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE) {
+          walk(n, currentLang);
+        }
+      });
+    }
+  });
+
+  function startObserving(){
+    observer.observe(document.body, { childList:true, subtree:true, characterData:true });
+  }
+
+  window.setLang = function(lang){
+    applyLang(lang);
+    const menu = document.getElementById('langMenu');
+    if (menu) menu.classList.remove('open');
+  };
+
+  window.toggleLangMenu = function(){
+    const menu = document.getElementById('langMenu');
+    if (menu) menu.classList.toggle('open');
+  };
+
+  document.addEventListener('click', function(e){
+    const menu = document.getElementById('langMenu');
+    const btn = document.getElementById('langBtn');
+    if (!menu || !btn) return;
+    if (menu.classList.contains('open') && !menu.contains(e.target) && e.target !== btn) {
+      menu.classList.remove('open');
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', function(){
+    startObserving();
+    if (currentLang !== 'es') applyLang(currentLang);
+    else {
+      document.querySelectorAll('#langMenu button').forEach(b=>{
+        b.classList.toggle('active', b.dataset.lang === 'es');
+      });
+    }
+  });
+
+  // Si el DOM ya cargó (script al final del body), ejecutar ya.
+  if (document.readyState !== 'loading') {
+    startObserving();
+    if (currentLang !== 'es') applyLang(currentLang);
+    else {
+      document.querySelectorAll('#langMenu button').forEach(b=>{
+        b.classList.toggle('active', b.dataset.lang === 'es');
+      });
+    }
+  }
+})();
+</script>
+
 </body>
 </html>
