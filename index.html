@@ -745,6 +745,17 @@
   .launch-btn:active{transform:scale(.98);}
   .launch-btn img{width:26px; height:26px; object-fit:contain;}
 
+  /* ---- botón llamativo: BuzzFarm (juego vinculado) ---- */
+  .game-btn{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    width:100%; margin:14px 0 4px; padding:16px; border:1px solid var(--up);
+    border-radius:14px; background:linear-gradient(135deg, #103a27, #0c1f16);
+    color:var(--up); font-size:15.5px; font-weight:800; letter-spacing:.2px;
+    box-shadow:0 0 18px rgba(49,213,131,.25);
+  }
+  .game-btn:active{transform:scale(.98);}
+  .game-btn span.emoji{font-size:20px; line-height:1;}
+
   .logo-fila{display:flex; align-items:center; gap:14px;}
   .logo-prev{
     width:64px; height:64px; border-radius:16px; flex-shrink:0;
@@ -901,6 +912,10 @@
       </button>
       <button class="launch-btn" onclick="goTab('crear')">
         <img id="launchIcon" data-ic="herramientas" alt=""><span>Lanzar un token</span>
+      </button>
+
+      <button class="game-btn" onclick="abrirBuzzFarm()">
+        <span class="emoji">🐝</span><span>Visitá BuzzFarm</span>
       </button>
 
       <div class="card">
@@ -3158,6 +3173,7 @@
   const LINK_TELEGRAM = 'https://t.me/BuzzComunity';
   const LINK_X = 'https://x.com/buzztoken_world';
   const LINK_APP = 'https://world.org/mini-app?app_id=app_815d5d92a5f26a91cfa25bc3a5bc3364';
+  const LINK_BUZZFARM = 'https://world.org/mini-app?app_id=app_3e9c2f5581972d797aedb86a4c34c3d4';
 
   const CLAIM_ABI = [
     'function reclamarDiario()',
@@ -3178,6 +3194,7 @@
   ];
 
   function abrirTelegram(){ window.open(LINK_TELEGRAM, '_blank'); }
+  function abrirBuzzFarm(){ window.open(LINK_BUZZFARM, '_blank'); }
 
   // ---------- el enlace de invitación ----------
   // World App NO le pasa a la mini app los parámetros sueltos de la URL:
