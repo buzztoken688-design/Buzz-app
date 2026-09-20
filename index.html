@@ -1836,6 +1836,72 @@
   let provider = null;
   let mk = null;
   let userAddress = null;
+
+  // ------------------------------------------------------------
+  //  Caché local de tokens: guarda la última lista con saldo que se vio,
+  //  para pintarla de una al entrar (sin el relojito de "Leyendo tus
+  //  tokens…") mientras loadBalances() la actualiza por detrás sin que
+  //  se note. Se guarda por dirección de wallet, así cada cuenta ve la suya.
+  // ------------------------------------------------------------
+  function tokenCacheKey(addr){
+    return 'buzz_cache_tokens_' + (addr || '').toLowerCase();
+  }
+
+  function guardarCacheTokens(addr, shownTokens, totalText){
+    try{
+      localStorage.setItem(tokenCacheKey(addr), JSON.stringify({
+        tokens: shownTokens,
+        total: totalText,
+        ts: Date.now()
+      }));
+    }catch(e){ /* si el storage está lleno o bloqueado, no pasa nada grave */ }
+  }
+
+  function leerCacheTokens(addr){
+    try{
+      const raw = localStorage.getItem(tokenCacheKey(addr));
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+
+  // Pinta la caché tal cual, con el mismo HTML de fila que usa loadBalances,
+  // para que no se note el salto cuando la lectura real la reemplace.
+  function pintarCacheTokens(cache){
+    const listEl = document.getElementById('tokenList');
+    if(!cache || !cache.tokens || !cache.tokens.length){
+      return false;
+    }
+    listEl.innerHTML = '';
+    cache.tokens.forEach(r => {
+      if(tokensOcultos().includes((r.address || '').toLowerCase())) return;
+      const tk = { symbol: r.symbol, name: r.name, address: r.address, decimals: r.decimals, icon: r.icon };
+      const iconHtml = tkIconHtml(tk);
+      const row = document.createElement('div');
+      row.className = 'token-row';
+      row.style.cursor = 'pointer';
+      row.innerHTML = `
+        <div class="tk-icon">${iconHtml}</div>
+        <div class="tk-info">
+          <div class="tk-name">${r.name}</div>
+          <div class="tk-sub">${r.symbol}</div>
+        </div>
+        <div class="tk-amt">
+          <div class="tk-bal">${trimNum(r.balance)}</div>
+          ${r.usdValue != null ? `<div class="tk-usd">$${Number(r.usdValue).toLocaleString('es',{maximumFractionDigits:2})}</div>` : ''}
+        </div>`;
+      row.onclick = () => r.esLanzado
+        ? abrirLanzadoPorDireccion(r.address)
+        : openTokenDetail(r);
+      listEl.appendChild(row);
+    });
+    if(cache.total){
+      const totalEl = document.getElementById('totalUsd');
+      if(totalEl) totalEl.textContent = cache.total;
+    }
+    walletTokens = cache.tokens;
+    return true;
+  }
   let username = null;
   let fromToken = KNOWN_TOKENS[0];
   let walletTokens = [...KNOWN_TOKENS]; // se actualiza en loadBalances con los tokens reales de la wallet
@@ -2049,7 +2115,15 @@
     document.getElementById('fromTokenBtn').innerHTML = tkSelectHtml(fromToken);
     document.getElementById('sendTokenBtn').innerHTML = tkSelectHtml(sendToken);
     await initEthers();
-    loadBalances();
+
+    // Se pinta la última lista guardada de una, sin relojito, mientras
+    // loadBalances() actualiza por detrás. Si no hay caché (primera vez
+    // en este teléfono), loadBalances muestra "Leyendo tus tokens…" como
+    // siempre.
+    const cache = leerCacheTokens(userAddress);
+    const huboCache = pintarCacheTokens(cache);
+    loadBalances(huboCache);
+
     initAnuncios();
     ponerIconoLanzar();
   }
@@ -2305,11 +2379,16 @@
     }
   }
 
-  async function loadBalances(){
+  async function loadBalances(silencioso){
     try{
       const p = await getReadProvider();
       const listEl = document.getElementById('tokenList');
-      listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
+      // Si ya hay algo pintado de la caché (silencioso=true), no se pisa con
+      // el mensaje de "Leyendo tus tokens…": el usuario sigue viendo la
+      // última sesión mientras esto corre por detrás.
+      if(!silencioso){
+        listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
+      }
 
       // lista fija: WLD, ZORP y los tokens curados que confirmaste como confiables.
       // Se lee cada uno directo de la blockchain (símbolo, nombre, decimales, saldo) —
@@ -2650,11 +2729,20 @@
       const totalEl = document.getElementById('totalUsd');
       if(totalEl) totalEl.textContent = totalText;
 
+      // Se guarda la foto de esta lectura para la próxima vez que el
+      // usuario entre: se pinta de una, sin relojito, mientras esto mismo
+      // se repite por detrás.
+      if(anyShown) guardarCacheTokens(userAddress, shownTokens, totalText);
+
       if(!anyShown){
         listEl.innerHTML = '<div class="empty-state">No se encontraron tokens con saldo en tu lista</div>';
       }
     }catch(e){
       console.error('loadBalances error', e);
+      // Si esto era una actualización silenciosa (ya había caché pintada),
+      // no se pisa la pantalla con el mensaje de error: el usuario se queda
+      // viendo su última sesión conocida en vez de un cartel de fallo.
+      if(silencioso) return;
       document.getElementById('tokenList').innerHTML =
         '<div class="empty-state">No se pudo conectar a la red: ' + (e && e.message ? e.message : 'error') +
         '<br><br><span style="color:var(--buzz); cursor:pointer;" onclick="loadBalances()">↻ Reintentar</span></div>';
@@ -4714,7 +4802,12 @@
       findRoute(fromToken.address.toLowerCase(), toToken.address.toLowerCase())
     ]);
 
-    quoteState.loading = false;
+    // OJO: loading se apaga recién en cada punto de salida más abajo, una
+    // vez que outAmount ya quedó con el valor definitivo. Antes se apagaba
+    // acá mismo, apenas se resolvía la ruta — el botón se volvía a habilitar
+    // mientras todavía faltaba la consulta al pool (cotizarEnCadena), así
+    // que si el usuario tocaba "Swap" en esa ventana, el mínimo se calculaba
+    // con una cotización vieja o vacía y la transacción fallaba al simular.
     quoteState.route = route.type;
     quoteState.poolFee = route.poolFee;
     quoteState.worldSwap = route.worldSwap || false;
@@ -4740,6 +4833,7 @@
         quoteState.noRoute   = false;
         quoteState.outAmount = neto;
         quoteState.deCadena  = true;                 // vino del pool: el mínimo puede ser ajustado
+        quoteState.loading   = false;
         toAmountEl.value = trimNum(neto);
         updateSwapButton();
         return;
@@ -4760,6 +4854,7 @@
           const neto  = bruto * (1 - 50/10000);      // menos la comisión del 0,50%
           quoteState.noRoute  = false;
           quoteState.outAmount = neto;
+          quoteState.loading  = false;
           toAmountEl.value = trimNum(neto);
           updateSwapButton();
           return;
@@ -4768,6 +4863,7 @@
 
       quoteState.noRoute = true;
       quoteState.outAmount = null;
+      quoteState.loading = false;
       toAmountEl.value = '';
       updateSwapButton();
       return;
@@ -4779,6 +4875,7 @@
     const estimatedOut = usdValue / priceTo;
 
     quoteState.outAmount = estimatedOut;
+    quoteState.loading = false;
     toAmountEl.value = trimNum(estimatedOut);
     updateSwapButton();
   }
@@ -4814,6 +4911,12 @@
     const amountStr = document.getElementById('fromAmount').value;
     const amount = num(amountStr);
     if(!amount) return;
+    // Segunda barrera además del fix en refreshQuote: si por lo que sea la
+    // cotización sigue en curso, no se manda nada con un mínimo desactualizado.
+    if(quoteState.loading){
+      showToast('Esperá a que termine de cotizar', true);
+      return;
+    }
     if(quoteState.noRoute || quoteState.outAmount === null){
       showToast('No se encontró una cotización válida para este par', true);
       return;
