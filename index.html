@@ -7024,7 +7024,8 @@
 
     document.getElementById('hojaChipsCompra').innerHTML =
       [0.5, 1, 3, 5, 10, 25].map(v =>
-        '<button onclick="lzPonerMonto(\'compra\',' + v + ')">' + v + ' WLD</button>').join('');
+        '<button onclick="lzPonerMonto(\'compra\',' + v + ')">' + v + ' WLD</button>').join('')
+      + '<button onclick="lzMax(\'compra\')">MAX</button>';
     document.getElementById('hojaChipsVenta').innerHTML =
       [25, 50, 75, 100].map(v =>
         '<button onclick="lzPonerPorcentaje(' + v + ')">' + v + '%</button>').join('');
