@@ -3074,6 +3074,48 @@
     FD.tradesTimer = setInterval(() => pedirTradesGecko(poolAddr, false), 12000);
   }
 
+  // Contratos conocidos (routers, Permit2, factories propias) que a veces
+  // aparecen como "quien operó" en vez del usuario real. Esto pasa porque
+  // los swaps desde World App van por una cuenta inteligente + relayer: la
+  // transacción que termina llegando al pool queda firmada por ese router,
+  // no por la wallet que el usuario ve en su World App. GeckoTerminal solo
+  // ve esa transacción final, así que no hay forma de recuperar la wallet
+  // real de ahí — se avisa en vez de mostrar una dirección o nombre falso.
+  // Se arma la primera vez que se necesita (no al cargar el script) porque
+  // GEK_ROUTER se declara más abajo en el archivo.
+  let _routersConocidos = null;
+  function routersConocidos(){
+    if(!_routersConocidos){
+      _routersConocidos = new Set([
+        BUZZ_SWAP.toLowerCase(),
+        PERMIT2.toLowerCase(),
+        WORLDSWAP_ROUTER.toLowerCase(),
+        V3_ROUTER_REAL.toLowerCase(),
+        V2_ROUTER_REAL.toLowerCase(),
+        GEK_ROUTER.toLowerCase(),
+      ]);
+    }
+    return _routersConocidos;
+  }
+
+  function quienOpero(dir){
+    const a = (dir || '').toLowerCase();
+    if(routersConocidos().has(a)) return 'Router/Wallet inteligente';
+    return esc(comoSeLlama(dir));
+  }
+
+  // Formato de dólares que no colapsa a "$0" en trades chicos (frecuente con
+  // tokens de pocos centavos): igual criterio que fdPrecioLargo, con más
+  // decimales cuando el monto es chico en vez de redondear a cero.
+  function fdVolCorto(v){
+    const n = parseFloat(v);
+    if(isNaN(n)) return '—';
+    if(n === 0) return '$0';
+    if(n >= 1) return '$' + n.toLocaleString('es', {maximumFractionDigits:2});
+    if(n >= 0.01) return '$' + n.toFixed(4);
+    return '$' + n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  }
+
   async function pedirTradesGecko(poolAddr, primeraVez){
     const el = document.getElementById('fdTrades');
     if(!el || FD.pool !== poolAddr){ detenerTradesEnVivo(); return; }
@@ -3090,7 +3132,7 @@
         return {
           wallet: a.tx_from_address || '',
           esCompra: a.kind === 'buy',
-          vol: a.volume_in_usd != null ? '$' + parseFloat(a.volume_in_usd).toLocaleString('es', {maximumFractionDigits:2}) : '—',
+          vol: a.volume_in_usd != null ? fdVolCorto(a.volume_in_usd) : '—',
           ts: a.block_timestamp
         };
       });
@@ -3107,7 +3149,7 @@
             </div>
             <div class="tk-info">
               <div class="tk-name" style="color:${t.esCompra ? 'var(--up)' : 'var(--red)'};">${t.esCompra ? 'Compra' : 'Venta'}</div>
-              <div class="tk-sub">${esc(comoSeLlama(t.wallet))} · ${fdHaceRato(t.ts)}</div>
+              <div class="tk-sub">${quienOpero(t.wallet)} · ${fdHaceRato(t.ts)}</div>
             </div>
             <div class="tk-amt">
               <div class="tk-bal">${t.vol}</div>
