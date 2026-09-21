@@ -3033,7 +3033,11 @@
       if(tradesEl) tradesEl.innerHTML = '<div class="empty-state">Sin pool: no hay operaciones para mostrar.</div>';
       return;
     }
-    await cargarVelas();
+    // Antes cargarVelas() frenaba todo antes de arrancar las operaciones, así
+    // que se sumaba el tiempo de las dos, una atrás de la otra. Ahora arrancan
+    // juntas: el gráfico y la lista de operaciones se llenan cada uno apenas
+    // están listos, en vez de esperarse entre sí.
+    cargarVelas();
     cargarTradesGecko(poolAddr);
   }
 
@@ -3104,6 +3108,45 @@
     return esc(comoSeLlama(dir));
   }
 
+  // ------------------------------------------------------------
+  //  Wallet ORIGINAL de un trade externo (no lanzado en el propio
+  //  Launchpad). GeckoTerminal solo da tx_from_address, que en World App
+  //  suele ser la cuenta inteligente/router que ejecutó el swap, no la
+  //  wallet real de la persona — el mismo problema que ya se resolvió para
+  //  el Launchpad leyendo el evento Compra/Venta del GekRouter. Acá no hay
+  //  un evento propio así que se lee directo el recibo de la transacción:
+  //  el primer Transfer del token de entrada que sale de una dirección que
+  //  NO es un router/contrato conocido es la wallet que inició todo.
+  // ------------------------------------------------------------
+  const TOPIC_TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const walletOrigenPorTx = {}; // tx_hash -> dirección real (o '' si no se pudo)
+
+  async function walletOrigenDeTx(txHash, tokenEntrada){
+    const k = (txHash || '').toLowerCase();
+    if(!k) return '';
+    if(k in walletOrigenPorTx) return walletOrigenPorTx[k];
+    walletOrigenPorTx[k] = '';   // evita pedir dos veces a la vez
+    try{
+      const p = await rpcParaLogs();
+      const recibo = await p.getTransactionReceipt(txHash);
+      if(!recibo || !recibo.logs) return '';
+      const routers = routersConocidos();
+      const tokenAddr = (tokenEntrada || '').toLowerCase();
+      for(const log of recibo.logs){
+        if((log.address || '').toLowerCase() !== tokenAddr) continue;
+        if(!log.topics || log.topics[0] !== TOPIC_TRANSFER || log.topics.length < 3) continue;
+        const from = '0x' + log.topics[1].slice(-40);
+        // el primer Transfer que sale de una wallet que no es un router
+        // conocido ni la dirección cero es quien puso la plata originalmente
+        if(!routers.has(from.toLowerCase()) && !/^0x0{40}$/i.test(from)){
+          walletOrigenPorTx[k] = from;
+          return from;
+        }
+      }
+    }catch(e){ /* si el RPC no responde, se sigue mostrando lo que ya había */ }
+    return walletOrigenPorTx[k];
+  }
+
   // Formato de dólares que no colapsa a "$0" en trades chicos (frecuente con
   // tokens de pocos centavos): igual criterio que fdPrecioLargo, con más
   // decimales cuando el monto es chico en vez de redondear a cero.
@@ -3131,6 +3174,8 @@
         const a = (it && it.attributes) || {};
         return {
           wallet: a.tx_from_address || '',
+          txHash: a.tx_hash || '',
+          tokenEntrada: a.from_token_address || '',
           esCompra: a.kind === 'buy',
           vol: a.volume_in_usd != null ? fdVolCorto(a.volume_in_usd) : '—',
           ts: a.block_timestamp
@@ -3163,6 +3208,26 @@
       // el @nombre — igual que ya se hace en Operaciones del Launchpad.
       pintar();
       completarNombres(trades, pintar);
+
+      // Además, para las filas que quedaron marcadas como router/cuenta
+      // inteligente, se busca por detrás la wallet que puso la plata
+      // originalmente (leyendo el recibo de la transacción), y si aparece
+      // se repinta con esa wallet — o su @nombre si también lo tiene.
+      (async () => {
+        const rutedas = trades.filter(t => routersConocidos().has((t.wallet || '').toLowerCase()) && t.txHash);
+        for(let i = 0; i < rutedas.length; i += 4){
+          if(FD.pool !== poolAddr) return;
+          await Promise.all(rutedas.slice(i, i + 4).map(async (t) => {
+            const real = await walletOrigenDeTx(t.txHash, t.tokenEntrada);
+            if(real) t.wallet = real;
+          }));
+          if(FD.pool !== poolAddr) return;
+          pintar();
+        }
+        // si alguna wallet recién resuelta también tiene username, un
+        // último repintado la muestra con nombre en vez de dirección
+        completarNombres(trades, pintar);
+      })();
     }catch(e){
       if(FD.pool !== poolAddr) return;
       if(primeraVez) el.innerHTML = '<div class="empty-state">No se pudieron cargar las operaciones.</div>';
