@@ -3111,17 +3111,27 @@
   // ------------------------------------------------------------
   //  Wallet ORIGINAL de un trade externo (no lanzado en el propio
   //  Launchpad). GeckoTerminal solo da tx_from_address, que en World App
-  //  suele ser la cuenta inteligente/router que ejecutó el swap, no la
-  //  wallet real de la persona — el mismo problema que ya se resolvió para
-  //  el Launchpad leyendo el evento Compra/Venta del GekRouter. Acá no hay
-  //  un evento propio así que se lee directo el recibo de la transacción:
-  //  el primer Transfer del token de entrada que sale de una dirección que
-  //  NO es un router/contrato conocido es la wallet que inició todo.
+  //  es la cuenta inteligente/router que ejecutó el swap dentro del paquete
+  //  de Account Abstraction (ERC-4337) — no necesariamente la que el
+  //  usuario reconoce como "su" wallet en el momento de la firma.
+  //
+  //  El dato exacto está en el propio EntryPoint estándar de ERC-4337: emite
+  //  un evento UserOperationEvent con el "sender" (quien firmó el paquete
+  //  completo de acciones) como parámetro indexado — no hay que adivinar
+  //  filtrando logs de tokens, se lee directo.
   // ------------------------------------------------------------
-  const TOPIC_TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  // No hay confirmación de qué versión de EntryPoint usa World Chain
+  // específicamente, así que se prueban las dos direcciones estándar
+  // conocidas — v0.6 y v0.7 — con el mismo topic de evento (el formato
+  // del evento no cambió entre esas versiones).
+  const ENTRYPOINTS_4337 = new Set([
+    '0x0000000071727de22e5e9d8baf0edac6f37da032', // v0.7
+    '0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789',  // v0.6
+  ]);
+  const TOPIC_USEROP_EVENT = '0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f';
   const walletOrigenPorTx = {}; // tx_hash -> dirección real (o '' si no se pudo)
 
-  async function walletOrigenDeTx(txHash, tokenEntrada){
+  async function walletOrigenDeTx(txHash){
     const k = (txHash || '').toLowerCase();
     if(!k) return '';
     if(k in walletOrigenPorTx) return walletOrigenPorTx[k];
@@ -3130,18 +3140,13 @@
       const p = await rpcParaLogs();
       const recibo = await p.getTransactionReceipt(txHash);
       if(!recibo || !recibo.logs) return '';
-      const routers = routersConocidos();
-      const tokenAddr = (tokenEntrada || '').toLowerCase();
       for(const log of recibo.logs){
-        if((log.address || '').toLowerCase() !== tokenAddr) continue;
-        if(!log.topics || log.topics[0] !== TOPIC_TRANSFER || log.topics.length < 3) continue;
-        const from = '0x' + log.topics[1].slice(-40);
-        // el primer Transfer que sale de una wallet que no es un router
-        // conocido ni la dirección cero es quien puso la plata originalmente
-        if(!routers.has(from.toLowerCase()) && !/^0x0{40}$/i.test(from)){
-          walletOrigenPorTx[k] = from;
-          return from;
-        }
+        if(!ENTRYPOINTS_4337.has((log.address || '').toLowerCase())) continue;
+        if(!log.topics || log.topics[0] !== TOPIC_USEROP_EVENT || log.topics.length < 3) continue;
+        // topic[2] es "sender": la cuenta inteligente que firmó el UserOp
+        const sender = '0x' + log.topics[2].slice(-40);
+        walletOrigenPorTx[k] = sender;
+        return sender;
       }
     }catch(e){ /* si el RPC no responde, se sigue mostrando lo que ya había */ }
     return walletOrigenPorTx[k];
@@ -3209,16 +3214,17 @@
       pintar();
       completarNombres(trades, pintar);
 
-      // Además, para las filas que quedaron marcadas como router/cuenta
-      // inteligente, se busca por detrás la wallet que puso la plata
-      // originalmente (leyendo el recibo de la transacción), y si aparece
-      // se repinta con esa wallet — o su @nombre si también lo tiene.
+      // Para TODAS las filas con hash de transacción se intenta leer el
+      // "sender" real del UserOperation (ver walletOrigenDeTx arriba): es
+      // el dato correcto sin importar si la dirección que dio GeckoTerminal
+      // ya coincidía o no con uno de los routers conocidos, porque puede
+      // haber routers/intermediarios que la lista no cubre.
       (async () => {
-        const rutedas = trades.filter(t => routersConocidos().has((t.wallet || '').toLowerCase()) && t.txHash);
-        for(let i = 0; i < rutedas.length; i += 4){
+        const conHash = trades.filter(t => t.txHash);
+        for(let i = 0; i < conHash.length; i += 4){
           if(FD.pool !== poolAddr) return;
-          await Promise.all(rutedas.slice(i, i + 4).map(async (t) => {
-            const real = await walletOrigenDeTx(t.txHash, t.tokenEntrada);
+          await Promise.all(conHash.slice(i, i + 4).map(async (t) => {
+            const real = await walletOrigenDeTx(t.txHash);
             if(real) t.wallet = real;
           }));
           if(FD.pool !== poolAddr) return;
