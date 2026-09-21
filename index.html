@@ -1520,6 +1520,15 @@
     </div>
 
     <div class="card fd-card">
+      <div class="fd-cap">Operaciones recientes <span style="color:var(--buzz);">● en vivo</span></div>
+      <div class="crear-hint" style="margin:0 0 10px;">
+        Últimas operaciones de este par en el DEX: quién compró y quién vendió.
+        Para el ranking completo de poseedores, tocá "📊 GeckoTerminal" más abajo.
+      </div>
+      <div id="fdTrades"><div class="empty-state">Cargando…</div></div>
+    </div>
+
+    <div class="card fd-card">
       <div class="fd-cap">Token</div>
       <div class="fd-row"><span>Tu saldo</span><b id="detailBalance">0</b></div>
       <div class="fd-row"><span>Valor de tu saldo</span><b id="detailUsdValue">—</b></div>
@@ -1995,7 +2004,13 @@
   }
 
   function openModal(id){ document.getElementById(id).classList.add('show'); }
-  function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+  function closeModal(id){
+    document.getElementById(id).classList.remove('show');
+    // Si se cierra la ficha de un token, se corta el refresco automático de
+    // "Operaciones recientes": no tiene sentido seguir pidiendo datos por
+    // detrás de una pantalla que el usuario ya no está mirando.
+    if(id === 'tokenDetailModal') detenerTradesEnVivo();
+  }
 
   function copyAddr(){
     if(!userAddress) return;
@@ -2774,7 +2789,7 @@
   //  capitalización y suministro; el pool con más liquidez da
   //  variaciones, actividad y las velas del gráfico.
   // ============================================================
-  const FD = { addr:null, pool:null, poolAt:null, rango:24, velas:[], cargando:0 };
+  const FD = { addr:null, pool:null, poolAt:null, rango:24, velas:[], cargando:0, tradesTimer:null };
 
   // tokens que el usuario decidió no ver más en Inicio
   function tokensOcultos(){
@@ -3011,12 +3026,108 @@
     }
 
     FD.pool = poolAddr;
+    const tradesEl = document.getElementById('fdTrades');
     if(!poolAddr){
       document.getElementById('fdChartNota').textContent = 'Este token todavía no tiene pool con datos de mercado.';
       FD.velas = []; dibujarFdChart();
+      if(tradesEl) tradesEl.innerHTML = '<div class="empty-state">Sin pool: no hay operaciones para mostrar.</div>';
       return;
     }
     await cargarVelas();
+    cargarTradesGecko(poolAddr);
+  }
+
+  // Tiempo relativo cortito ("hace 2 min") para las filas de operaciones.
+  function fdHaceRato(iso){
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return '';
+    const seg = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if(seg < 60) return 'hace ' + seg + ' s';
+    const min = Math.floor(seg / 60);
+    if(min < 60) return 'hace ' + min + ' min';
+    const hs = Math.floor(min / 60);
+    if(hs < 24) return 'hace ' + hs + ' h';
+    return 'hace ' + Math.floor(hs / 24) + ' d';
+  }
+
+  // Operaciones recientes del pool en el DEX, para CUALQUIER token con pool
+  // (no solo los lanzados en el propio Launchpad, que tienen su curva
+  // propia). Usa el endpoint público y gratuito de GeckoTerminal — el mismo
+  // que ya se usa para el gráfico — así que no hace falta un contrato propio
+  // ni una API key para ver quién compró y quién vendió.
+  function detenerTradesEnVivo(){
+    if(FD.tradesTimer){ clearInterval(FD.tradesTimer); FD.tradesTimer = null; }
+  }
+
+  async function cargarTradesGecko(poolAddr){
+    const el = document.getElementById('fdTrades');
+    if(!el) return;
+    // Si se venía siguiendo otro token, se corta ese polling antes de arrancar
+    // uno nuevo — si no, quedarían dos relojes pidiendo datos a la vez.
+    detenerTradesEnVivo();
+    el.innerHTML = '<div class="empty-state">Cargando…</div>';
+    await pedirTradesGecko(poolAddr, /*primeraVez*/ true);
+    // Mientras el modal siga en este mismo token, se vuelve a pedir cada
+    // 12 s — ritmo pensado para que se sienta en vivo sin gastar de golpe
+    // el límite de 30 llamadas/min que tiene la API gratis de GeckoTerminal
+    // entre todos los que estén mirando tokens al mismo tiempo.
+    FD.tradesTimer = setInterval(() => pedirTradesGecko(poolAddr, false), 12000);
+  }
+
+  async function pedirTradesGecko(poolAddr, primeraVez){
+    const el = document.getElementById('fdTrades');
+    if(!el || FD.pool !== poolAddr){ detenerTradesEnVivo(); return; }
+    try{
+      const j = await gtJson(`${GT_BASE}/pools/${poolAddr}/trades`);
+      const items = (j && j.data) || [];
+      if(FD.pool !== poolAddr) return; // el usuario ya abrió otro token
+      if(!items.length){
+        if(primeraVez) el.innerHTML = '<div class="empty-state">No hubo operaciones en las últimas 24 h.</div>';
+        return;
+      }
+      const trades = items.slice(0, 40).map(it => {
+        const a = (it && it.attributes) || {};
+        return {
+          wallet: a.tx_from_address || '',
+          esCompra: a.kind === 'buy',
+          vol: a.volume_in_usd != null ? '$' + parseFloat(a.volume_in_usd).toLocaleString('es', {maximumFractionDigits:2}) : '—',
+          ts: a.block_timestamp
+        };
+      });
+
+      const pintar = () => {
+        if(FD.pool !== poolAddr) return;
+        el.innerHTML = '';
+        trades.forEach(t => {
+          const row = document.createElement('div');
+          row.className = 'token-row';
+          row.innerHTML = `
+            <div class="tk-icon" style="background:${t.esCompra ? 'rgba(49,213,131,.15)' : 'rgba(255,77,77,.15)'}; color:${t.esCompra ? 'var(--up)' : 'var(--red)'}; font-size:16px; font-weight:800;">
+              ${t.esCompra ? '↑' : '↓'}
+            </div>
+            <div class="tk-info">
+              <div class="tk-name" style="color:${t.esCompra ? 'var(--up)' : 'var(--red)'};">${t.esCompra ? 'Compra' : 'Venta'}</div>
+              <div class="tk-sub">${esc(comoSeLlama(t.wallet))} · ${fdHaceRato(t.ts)}</div>
+            </div>
+            <div class="tk-amt">
+              <div class="tk-bal">${t.vol}</div>
+            </div>`;
+          el.appendChild(row);
+        });
+      };
+
+      // Se pinta ya mismo con direcciones cortas (rápido), y si alguna wallet
+      // tiene username en World App, se resuelve por detrás y se repinta con
+      // el @nombre — igual que ya se hace en Operaciones del Launchpad.
+      pintar();
+      completarNombres(trades, pintar);
+    }catch(e){
+      if(FD.pool !== poolAddr) return;
+      if(primeraVez) el.innerHTML = '<div class="empty-state">No se pudieron cargar las operaciones.</div>';
+      // si falla una actualización de las que se repiten solas, no se pisa
+      // la lista que ya se estaba viendo: mejor datos un poco viejos que
+      // un cartel de error tapando todo cada 12 segundos.
+    }
   }
 
   function openTokenDetail(tk){
