@@ -1069,6 +1069,9 @@
         <button data-o="graduados">Graduados</button>
       </div>
 
+      <input class="field" id="lzBuscar" placeholder="🔍 Buscar por nombre o símbolo…"
+             style="margin-top:12px;" oninput="renderLanzados()">
+
       <div class="card">
         <div id="lzLista"><div class="empty-state">Cargando…</div></div>
       </div>
@@ -6382,11 +6385,45 @@
     return LANZADOS_OCULTOS.indexOf(addr.toLowerCase()) === -1;
   }
 
-  const LZ_MAX_LISTA = 12;      // cuántos lanzamientos recientes se traen
+  const LZ_MAX_LISTA = 40;      // cuántos lanzamientos recientes se traen (antes 12: los tokens viejos con saldo real desaparecían del Launchpad apenas se lanzaban 12 nuevos)
   const LZ_SLIPPAGE  = 3;       // % de tolerancia
 
   let lanzados      = [];
   let lanzadosAt    = 0;
+
+  // ------------------------------------------------------------
+  //  Caché local de "Tokens lanzados": misma idea que la de "Tus tokens"
+  //  en Inicio. Se guarda la última lista vista para pintarla de una al
+  //  entrar (sin el "Cargando…") mientras se actualiza por detrás sin que
+  //  se note. raised/meta son BigInt y no se pueden guardar tal cual en
+  //  JSON, así que se pasan a texto al guardar y se reconstruyen al leer.
+  // ------------------------------------------------------------
+  const LZ_CACHE_KEY = 'buzz_cache_lanzados';
+
+  function guardarCacheLanzados(lista){
+    try{
+      const plano = lista.map(t => ({
+        address: t.address, curva: t.curva, nombre: t.nombre, simbolo: t.simbolo,
+        decimals: t.decimals, raised: t.raised.toString(), meta: t.meta.toString(),
+        graduado: t.graduado, icon: t.icon || null
+      }));
+      localStorage.setItem(LZ_CACHE_KEY, JSON.stringify({ lista: plano, ts: Date.now() }));
+    }catch(e){ /* si el storage está lleno o bloqueado, no pasa nada grave */ }
+  }
+
+  function leerCacheLanzados(){
+    try{
+      const raw = localStorage.getItem(LZ_CACHE_KEY);
+      if(!raw) return null;
+      const data = JSON.parse(raw);
+      if(!data || !Array.isArray(data.lista)) return null;
+      return data.lista.map(t => ({
+        ...t,
+        raised: BigInt(t.raised || '0'),
+        meta: BigInt(t.meta || '0')
+      }));
+    }catch(e){ return null; }
+  }
   let lzOrdenActual = 'tendencia';
   let lzActual      = null;     // token abierto en la ficha
   let lzSaldo       = 0n;       // saldo del usuario en ese token
@@ -6422,6 +6459,19 @@
     const el = document.getElementById('lzLista');
     if(!force && lanzados.length && (Date.now() - lanzadosAt) < 60000){
       renderLanzados(); return;
+    }
+    // Si no hay nada en memoria todavía (recién se abrió la app) pero sí hay
+    // una foto guardada de la última vez, se pinta esa ya mismo: así el
+    // usuario ve su lista de una, sin relojito, mientras la lectura real de
+    // abajo la actualiza por detrás sin tapar la pantalla con "Cargando…".
+    if(!lanzados.length){
+      const cache = leerCacheLanzados();
+      if(cache && cache.length){
+        lanzados = cache;
+        renderLanzados();
+        renderMcGrid();
+        renderLpStrip();
+      }
     }
     if(el && !lanzados.length) el.innerHTML = '<div class="empty-state">Cargando…</div>';
 
@@ -6467,8 +6517,14 @@
       lzCargarIconos();
       enriquecerLanzados();
       cargarDestacados();
+      // Foto de esta lectura para la próxima vez que el usuario entre.
+      if(lanzados.length) guardarCacheLanzados(lanzados);
     }catch(e){
       console.error('lanzados', e);
+      // Si ya había algo pintado (de la caché o de una lectura anterior),
+      // no se tapa la pantalla con un cartel de error: el usuario se queda
+      // viendo lo último que sí se pudo leer.
+      if(lanzados.length) return;
       if(el) el.innerHTML = '<div class="empty-state">No se pudo leer la factory<br><br>' +
         '<span style="color:var(--buzz); cursor:pointer;" onclick="cargarLanzados(true)">↻ Reintentar</span></div>';
     }
@@ -6609,13 +6665,27 @@
     }
     // el orden lo elige el usuario con las pestañas de arriba
     let lista = lanzados.slice();
+
+    // filtro de texto del buscador: nombre o símbolo, sin importar
+    // mayúsculas/minúsculas ni si el token es de los más recientes
+    const buscarEl = document.getElementById('lzBuscar');
+    const q = buscarEl ? buscarEl.value.trim().toLowerCase() : '';
+    if(q){
+      lista = lista.filter(t =>
+        (t.nombre || '').toLowerCase().includes(q) ||
+        (t.simbolo || '').toLowerCase().includes(q)
+      );
+    }
+
     if(lzOrdenActual === 'tendencia'){
       lista.sort((a, b) => (b.raised > a.raised ? 1 : (b.raised < a.raised ? -1 : 0)));
     }else if(lzOrdenActual === 'graduados'){
       lista = lista.filter(t => t.graduado);
     }
     if(!lista.length){
-      el.innerHTML = '<div class="empty-state">Nada para mostrar en este orden</div>';
+      el.innerHTML = q
+        ? '<div class="empty-state">No se encontró ningún token con "' + esc(buscarEl.value.trim()) + '"</div>'
+        : '<div class="empty-state">Nada para mostrar en este orden</div>';
       return;
     }
 
