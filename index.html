@@ -2244,13 +2244,16 @@
       const a = address.toLowerCase();
       for(const p of pares){
         const info = p.info || {};
-        let url = info.imageUrl || info.image || null;
-        // si el token es el de la derecha del par, el logo puede venir aparte
-        if(!url && p.baseToken && p.baseToken.address &&
-           p.baseToken.address.toLowerCase() !== a && info.baseImageUrl){
-          url = info.baseImageUrl;
-        }
-        if(url) return url;
+        // DexScreener no separa el logo por token dentro de "info": ese
+        // campo corresponde al par y en la práctica trae el logo del
+        // baseToken. Si el token que se pidió es el quoteToken del par
+        // (como pasa con USDC casi siempre, por ser la contraparte de
+        // pares WLD/USDC), usar info.imageUrl le pondría el logo del OTRO
+        // token — que es justo el bug que hacía que USDC mostrara el logo
+        // de Worldcoin. Solo se usa cuando el token pedido es el baseToken.
+        const esBase = p.baseToken && p.baseToken.address &&
+          p.baseToken.address.toLowerCase() === a;
+        if(esBase && info.imageUrl) return info.imageUrl;
       }
       return null;
     }catch(e){
@@ -2263,9 +2266,29 @@
   //   2. el logo guardado en el contrato de swap (instantáneo, sin límites)
   //   3. DexScreener
   // Antes de pedir nada se mira la caché, para no gastar pedidos al pedo.
+  // Logo de USDC como SVG incrustado (círculo azul con "$"), igual al que
+  // ya se ve en el resto de la app — no depende de ninguna API externa.
+  const ICON_USDC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
+    '<circle cx="16" cy="16" r="16" fill="#2775CA"/>' +
+    '<path fill="#FFF" d="M20.022 18.617c0-2.345-1.406-3.149-4.219-3.49-2.011-.267-2.412-.8-2.412-1.735s.669-1.534 2.010-1.534c1.204 0 1.874.4 2.209 1.399a.499.499 0 00.474.334h1.082a.47.47 0 00.368-.166.47.47 0 00.1-.4c-.334-1.63-1.607-2.775-3.187-2.897v-1.399c0-.3-.234-.535-.602-.6h-1.002c-.301.066-.535.3-.535.6v1.365c-2.011.267-3.283 1.6-3.283 3.267 0 2.211 1.339 3.083 4.152 3.424 1.875.334 2.479.734 2.479 1.802 0 1.067-.937 1.802-2.211 1.802-1.742 0-2.345-.734-2.546-1.732a.5.5 0 00-.468-.373h-1.14a.47.47 0 00-.367.166.47.47 0 00-.1.4c.3 1.87 1.474 3.188 3.923 3.556v1.4c0 .3.234.534.602.6h1.002c.301-.067.535-.3.535-.6v-1.4c2.011-.334 3.417-1.735 3.417-3.556z"/>' +
+    '<path fill="#FFF" d="M12.868 24.153c-4.62-1.655-6.998-6.775-5.308-11.328 1.006-2.667 3.09-4.734 5.808-5.723a.44.44 0 00.301-.435V5.6a.4.4 0 00-.201-.367.36.36 0 00-.334 0C6.508 6.968 3.025 13.91 5.371 20.484c1.406 3.858 4.42 6.834 8.336 8.209a.36.36 0 00.334-.033.4.4 0 00.201-.368v-1.066a.44.44 0 00-.301-.401zm5.976-18.919a.36.36 0 00-.334 0 .4.4 0 00-.201.367v1.067c0 .2.134.367.301.434 4.62 1.655 6.998 6.775 5.308 11.328-1.006 2.667-3.09 4.735-5.808 5.723a.44.44 0 00-.301.435v1.067a.4.4 0 00.201.367.36.36 0 00.334 0c6.63-2.1 10.113-9.045 7.767-15.618-1.406-3.834-4.386-6.81-8.267-8.17z"/>' +
+    '</svg>');
+
   async function getGeckoIcon(address){
     const addr = address.toLowerCase();
     if(addr in geckoIconCache) return geckoIconCache[addr];
+
+    // USDC es un token "core" con dirección fija y conocida: se le pone un
+    // logo propio de una vez, sin depender de las fuentes externas. Esas
+    // fuentes (GeckoTerminal y sobre todo DexScreener) a veces devuelven el
+    // logo del OTRO token del par cuando USDC aparece como quoteToken —
+    // esto fue justo lo que hacía que se viera el logo de Worldcoin en vez
+    // del de USDC.
+    if(addr === '0x79a02482a880bce3f13e09da970dc34db4cd24d1'){
+      geckoIconCache[addr] = ICON_USDC;
+      return ICON_USDC;
+    }
 
     const cache = cargarCacheLogos();
     if(addr in cache){
@@ -2690,10 +2713,16 @@
         geckoUrls.push(...res);
       }
 
+      const ocultos = tokensOcultos();
       priced.forEach((r, i) => {
         const geckoUrl = geckoUrls[i];
         const formatted = ethers.formatUnits(r.bal, r.decimals);
-        if(r.usdValue !== null) totalUsd += r.usdValue;
+        // Un token oculto no debe sumar al balance total: si no, el usuario
+        // lo esconde de la lista pero el número de arriba sigue inflado con
+        // un valor que ni siquiera puede ver ni operar (típico en spam con
+        // precio falso, que además no deja hacer swap).
+        const estaOculto = ocultos.includes((r.address || '').toLowerCase());
+        if(r.usdValue !== null && !estaOculto) totalUsd += r.usdValue;
 
         const tk = { symbol: r.symbol, name: r.name, address: r.address, decimals: r.decimals, icon: r.icon };
         const iconHtml = r.icon
@@ -2715,7 +2744,7 @@
             <div class="tk-bal">${trimNum(formatted)}</div>
             ${r.usdValue !== null ? `<div class="tk-usd">$${r.usdValue.toLocaleString('es',{maximumFractionDigits:2})}</div>` : ''}
           </div>`;
-        if(tokensOcultos().includes(r.address.toLowerCase())) return;   // el usuario lo escondió
+        if(estaOculto) return;   // el usuario lo escondió
         const tkForDetail = { ...tk, icon: r.icon || geckoUrl || tk.icon, balance: formatted, usdValue: r.usdValue };
         row.onclick = () => r.esLanzado
           ? abrirLanzadoPorDireccion(r.address)
