@@ -117,26 +117,6 @@
     font-size:18px;
   }
   .brand .name{font-weight:700; font-size:16px; letter-spacing:.3px;}
-  .lang-btn{
-    width:24px; height:24px; border-radius:50%; background:var(--panel);
-    border:1px solid var(--border); color:var(--text-dim); font-size:12px;
-    display:flex; align-items:center; justify-content:center; line-height:1;
-    padding:0; margin-left:2px; flex:0 0 auto;
-  }
-  .lang-btn:active{border-color:var(--buzz);}
-  .lang-menu{
-    display:none; position:absolute; top:54px; left:18px; z-index:50;
-    background:var(--panel-2); border:1px solid var(--border); border-radius:12px;
-    padding:6px; min-width:150px; box-shadow:0 8px 24px rgba(0,0,0,.4);
-  }
-  .lang-menu.open{display:block;}
-  .lang-menu button{
-    display:block; width:100%; text-align:left; background:transparent; border:none;
-    color:var(--text); font-family:inherit; font-size:13px; padding:9px 10px;
-    border-radius:8px;
-  }
-  .lang-menu button:active{background:var(--panel);}
-  .lang-menu button.active{color:var(--buzz); font-weight:700;}
   .user-chip{
     display:flex; align-items:center; gap:6px; background:var(--panel);
     border:1px solid var(--border); border-radius:20px; padding:6px 12px; font-size:13px; color:var(--text-dim);
@@ -773,9 +753,10 @@
   /* ---- botón llamativo: BuzzFarm (juego vinculado) ---- */
   .game-btn{
     display:flex; align-items:center; justify-content:center; gap:10px;
-    width:100%; margin:14px 0 4px; padding:16px; border:1px solid var(--buzz);
-    border-radius:14px; background:var(--buzz);
-    color:#0a0a0a; font-size:15.5px; font-weight:800; letter-spacing:.2px;
+    width:100%; margin:14px 0 4px; padding:16px; border:1px solid var(--up);
+    border-radius:14px; background:linear-gradient(135deg, #103a27, #0c1f16);
+    color:var(--up); font-size:15.5px; font-weight:800; letter-spacing:.2px;
+    box-shadow:0 0 18px rgba(49,213,131,.25);
   }
   .game-btn:active{transform:scale(.98);}
   .game-btn span.emoji{font-size:20px; line-height:1;}
@@ -873,6 +854,29 @@
   }
 
   ::-webkit-scrollbar{display:none;}
+
+  /* ---------- Ganar: Guardar (Morpho) y Liquidez (Uniswap V3) ---------- */
+  .gn-seg{display:flex; gap:6px; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:4px; margin-bottom:14px;}
+  .gn-seg button{flex:1; background:none; border:none; color:var(--text-dim); padding:10px 0; border-radius:10px; font-size:13px; font-weight:700; font-family:inherit;}
+  .gn-seg button.active{background:var(--buzz); color:var(--ink);}
+  .gn-row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .gn-name{font-size:16px; font-weight:800;}
+  .gn-sub{font-size:12px; color:var(--text-faint); margin-top:2px;}
+  .gn-apy{font-size:13px; font-weight:800; color:var(--up); text-align:right;}
+  .gn-badge{font-size:10px; font-weight:700; color:var(--up); border:1px solid var(--up); border-radius:8px; padding:2px 7px; white-space:nowrap;}
+  .gn-stats{display:flex; gap:10px; margin:12px 0;}
+  .gn-stat{flex:1; min-width:0; background:var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:10px;}
+  .gn-stat .l{font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.8px; font-weight:700;}
+  .gn-stat .v{font-size:13.5px; font-weight:700; margin-top:3px; word-break:break-word;}
+  .gn-btns{display:flex; gap:8px;}
+  .gn-btns .btn{padding:12px; font-size:13.5px;}
+  .gn-pcts{display:flex; gap:6px; margin:8px 0 14px;}
+  .gn-pcts button{flex:1; background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim); border-radius:10px; padding:9px 0; font-size:12px; font-weight:700; font-family:inherit;}
+  .gn-pcts button.active{border-color:var(--buzz); color:var(--buzz);}
+  .gn-note{font-size:11px; color:var(--text-faint); line-height:1.5; margin:4px 2px 14px;}
+  .gn-msg{font-size:12px; color:var(--text-dim); margin-top:12px; min-height:16px; line-height:1.5; word-break:break-word;}
+  .gn-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .gn-sec{font-size:12px; color:var(--text-dim); font-weight:700; letter-spacing:.4px; margin:6px 2px 10px;}
 </style>
 </head>
 <body>
@@ -887,18 +891,21 @@
   </div>
 </div>
 
+<script>
+  try{
+    if(JSON.parse(localStorage.getItem('buzz_session') || 'null')){
+      document.getElementById('btnConnect').style.display = 'none';
+      document.getElementById('connectStatus').textContent = 'Entrando…';
+    }
+  }catch(e){}
+</script>
+
 <!-- ================= APP ================= -->
 <div id="app" style="display:none;">
   <header>
     <div class="brand">
       <div class="mark"><img data-ic="inicio" alt="BUZZ"></div>
       <div class="name">BUZZ</div>
-      <button id="langBtn" class="lang-btn" aria-label="Cambiar idioma" onclick="toggleLangMenu()">🌐</button>
-      <div id="langMenu" class="lang-menu">
-        <button data-lang="es" onclick="setLang('es')">🇪🇸 Español</button>
-        <button data-lang="en" onclick="setLang('en')">🇬🇧 English</button>
-        <button data-lang="pt" onclick="setLang('pt')">🇧🇷 Português</button>
-      </div>
     </div>
     <div class="user-chip"><span class="dot"></span><span id="userTag">—</span></div>
   </header>
@@ -1068,9 +1075,6 @@
         <button data-o="nuevos">Nuevos</button>
         <button data-o="graduados">Graduados</button>
       </div>
-
-      <input class="field" id="lzBuscar" placeholder="🔍 Buscar por nombre o símbolo…"
-             style="margin-top:12px;" oninput="renderLanzados()">
 
       <div class="card">
         <div id="lzLista"><div class="empty-state">Cargando…</div></div>
@@ -1297,6 +1301,39 @@
       </div>
     </section>
 
+    <!-- -------- GANAR -------- -->
+    <section class="screen" id="screen-ganar">
+      <div class="gn-head">
+        <div class="section-title" style="margin:0;"><img class="icimg lg" data-ic="monedas" alt="">Ganar</div>
+        <button class="trend-refresh" onclick="gnRefrescar()">↻ Actualizar</button>
+      </div>
+      <div class="gn-seg">
+        <button id="gnSegG" class="active" onclick="gnSeg('guardar')">Guardar</button>
+        <button id="gnSegL" onclick="gnSeg('liquidez')">Liquidez</button>
+      </div>
+
+      <div id="gnPaneG">
+        <div id="gnVaultList"><div class="empty-state">Cargando…</div></div>
+        <div class="gn-note">
+          Tu dinero queda guardado en Morpho, no en BUZZ WALLET: lo podés retirar cuando quieras
+          (según la liquidez de la bóveda). El rendimiento lo paga Morpho, cambia con el tiempo y no está garantizado.
+          Los usuarios verificados con World ID pueden recibir un bono extra dentro de Morpho.
+        </div>
+      </div>
+
+      <div id="gnPaneL" style="display:none;">
+        <div class="gn-sec">TUS POSICIONES</div>
+        <div id="gnPosList"><div class="empty-state">Cargando…</div></div>
+        <div class="gn-sec" style="margin-top:18px;">POOLS VERIFICADOS</div>
+        <div id="gnPoolList"><div class="empty-state">Cargando…</div></div>
+        <div class="gn-note">
+          Al poner liquidez ganás una parte de las comisiones de cada swap del pool. Entrás con rango completo y las
+          posiciones quedan como NFT en tu wallet. El valor puede variar frente a solo guardar los dos tokens
+          (pérdida impermanente) y puede haber pérdidas.
+        </div>
+      </div>
+    </section>
+
     <!-- -------- PERFIL -------- -->
     <section class="screen" id="screen-perfil">
       <div class="section-title">Perfil</div>
@@ -1304,6 +1341,7 @@
         <div class="card-title">Tu cuenta</div>
         <div style="font-size:14px; margin-bottom:4px;" id="profileUser">—</div>
         <div style="font-size:12px; color:var(--text-faint); word-break:break-all;" id="profileAddr">—</div>
+        <button class="btn ghost" id="btnDesconectar" style="margin-top:14px; padding:11px; font-size:13px;" onclick="desconectar()">Desconectar</button>
       </div>
 
 
@@ -1431,6 +1469,7 @@
   <nav class="tabbar">
     <button class="tab-btn-plain active" data-tab="inicio" onclick="goTab('inicio')"><img data-ic="inicio" alt="Inicio"><span class="tab-lbl">Inicio</span></button>
     <button class="tab-btn-plain" data-tab="swap" onclick="goTab('swap')"><img data-ic="swap" alt="Swap"><span class="tab-lbl">Swap</span></button>
+    <button class="tab-btn-plain" data-tab="ganar" onclick="goTab('ganar')"><img data-ic="monedas" alt="Ganar"><span class="tab-lbl">Ganar</span></button>
     <button class="tab-btn-plain" data-tab="tendencias" onclick="goTab('tendencias')"><img data-ic="tendencias" alt="Tendencias"><span class="tab-lbl">Tendencias</span></button>
     <button class="tab-btn-plain" data-tab="lanzados" onclick="goTab('lanzados')"><img data-ic="launchpad" alt="Launchpad"><span class="tab-lbl">Launchpad</span></button>
     <button class="tab-btn-plain" data-tab="perfil" onclick="goTab('perfil')"><img data-ic="perfil" alt="Perfil"><span class="tab-lbl">Perfil</span></button>
@@ -1454,6 +1493,62 @@
          border:1px solid var(--red); border-radius:12px; background:rgba(255,77,77,.08);
          color:#ffb3b3; font-size:10.5px; line-height:1.5; white-space:pre-wrap;
          word-break:break-all; max-height:260px; overflow:auto;"></div>
+  </div>
+</div>
+
+<!-- ================= MODAL: GUARDAR (Morpho) ================= -->
+<div class="modal-overlay" id="gnModal">
+  <div class="modal" style="position:relative;">
+    <div class="close-x" onclick="closeModal('gnModal')">✕</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="gnTitle">Guardar</div>
+    <div class="gn-seg">
+      <button id="gnModDep" class="active" onclick="gnSetModo('dep')">Depositar</button>
+      <button id="gnModRet" onclick="gnSetModo('ret')">Retirar</button>
+    </div>
+    <div class="field-label" id="gnAvail">Disponible: —</div>
+    <input class="field" id="gnAmt" inputmode="decimal" placeholder="0.0" oninput="gnAmtEdit()">
+    <div class="gn-pcts">
+      <button onclick="gnPct(25)">25%</button><button onclick="gnPct(50)">50%</button>
+      <button onclick="gnPct(75)">75%</button><button onclick="gnPct(100)">MAX</button>
+    </div>
+    <button class="btn" id="gnBtn" onclick="gnConfirmar()">Depositar</button>
+    <div class="gn-msg" id="gnMsg"></div>
+  </div>
+</div>
+
+<!-- ================= MODAL: AGREGAR LIQUIDEZ ================= -->
+<div class="modal-overlay" id="gnLiqModal">
+  <div class="modal" style="position:relative;">
+    <div class="close-x" onclick="closeModal('gnLiqModal')">✕</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="gnLiqTitle">Agregar liquidez</div>
+    <div class="field-label" id="gnLiqL0">—</div>
+    <input class="field" id="gnLiqA0" inputmode="decimal" placeholder="0.0" oninput="gnLiqEdit(0)" style="margin-bottom:12px;">
+    <div class="field-label" id="gnLiqL1">—</div>
+    <input class="field" id="gnLiqA1" inputmode="decimal" placeholder="0.0" oninput="gnLiqEdit(1)">
+    <div class="gn-pcts">
+      <button onclick="gnLiqPct(25)">25%</button><button onclick="gnLiqPct(50)">50%</button>
+      <button onclick="gnLiqPct(75)">75%</button><button onclick="gnLiqPct(100)">MAX</button>
+    </div>
+    <button class="btn" id="gnLiqBtn" onclick="gnLiqConfirmar()">Agregar liquidez</button>
+    <div class="gn-msg" id="gnLiqMsg"></div>
+  </div>
+</div>
+
+<!-- ================= MODAL: RETIRAR LIQUIDEZ ================= -->
+<div class="modal-overlay" id="gnRetModal">
+  <div class="modal" style="position:relative;">
+    <div class="close-x" onclick="closeModal('gnRetModal')">✕</div>
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="gnRetTitle">Retirar liquidez</div>
+    <div class="field-label">¿Cuánto querés retirar?</div>
+    <div class="gn-pcts" id="gnRetPcts">
+      <button onclick="gnRetPct(25)">25%</button><button onclick="gnRetPct(50)">50%</button>
+      <button onclick="gnRetPct(75)">75%</button><button class="active" onclick="gnRetPct(100)">100%</button>
+    </div>
+    <button class="btn" id="gnRetBtn" onclick="gnRetConfirmar()">Retirar</button>
+    <div class="gn-msg" id="gnRetMsg"></div>
   </div>
 </div>
 
@@ -1520,15 +1615,6 @@
       <div class="fd-cap">Actividad 24 h</div>
       <div class="fd-row"><span>Compras</span><b id="fdACompras" class="up">—</b></div>
       <div class="fd-row"><span>Ventas</span><b id="fdAVentas" class="down">—</b></div>
-    </div>
-
-    <div class="card fd-card">
-      <div class="fd-cap">Operaciones recientes <span style="color:var(--buzz);">● en vivo</span></div>
-      <div class="crear-hint" style="margin:0 0 10px;">
-        Últimas operaciones de este par en el DEX: quién compró y quién vendió.
-        Para el ranking completo de poseedores, tocá "📊 GeckoTerminal" más abajo.
-      </div>
-      <div id="fdTrades"><div class="empty-state">Cargando…</div></div>
     </div>
 
     <div class="card fd-card">
@@ -1778,10 +1864,7 @@
   const ICON_ZORP = 'data:image/webp;base64,UklGRloXAABXRUJQVlA4WAoAAAAQAAAAiwAAaAAAQUxQSMIJAAABp8agbSRH5+zzJ90LgYjI5ecQJJJqMIRCjoMJGhfJXg4bkhxHMT5NMIgkKQ4zx3eV+Dd8gIaI/k8AY0TAfKW1FsDP8V/rEHGbc94AR16MiEywHvIoFCfNw/f2lyVAWb6RutUnNVVfNmbmG5a9U9daxRcjLgwFbdtIMX/auxdBRExAT407VMFEywUd61jH/ugLP3Tit7Zt1bZt24qpH2bUTjhuHP/dwpWFVlvrfcDWI2ICPNu2rbq1bW2ltD7GkMz29ILNzMx7h/Yb7JdnZmawBZY0eg1IkzbEI2IC8sHVHBs0rcnkcWtak2ML0kJrEWtZc11/OK4xw7KGnq2sw1zHzNOsw9tBlzlYNJj9wY1Za7B1edo6DaFdMB9vNxmatENbzq1N2Mx5jpvGrJEOuU1BOmUfE0laUpqT6JKgNdfWGmGFLJLbw0JzOg7G7EOPa6VLNHLO/TxcrkEbdBLyPEQi+fosKEhalx7M4ybBONyGIDp931CJEynkUpRCj0hyXO9Ql4e72xvrDRSX42UuLgXRsEt0oTXm2inXJDpEt2KP3mwy19ZajIARwICRyNELmqMYIUpJFlS6QaSa5eMtQ5NzcAQYiSAnj2I88YJB7qNDyuO6wOxDTa7ttWmxV6ggGAQjCIFAkCg5ihD0MMdW5Q0KNR8PLWshWkIFwYAQY8coMUIMhhiDQaWcs6h3SiF7p+kiItdopdBIeiiqWg2tSD/sD3PHqsKQQAgnUykdJp8tEawH2pNICu1VSU9bLK9uby4uLpbTYhxa5bB7eHxYbVarzeZpRyVzNxB6F3Ibey9UzSDWoYvWiXp5KfRnr2m8ePP+rbfvr2/Px2FoFgik9/T5afX4r7//4Ve/+sccZiA9UCldvjKaeRq0kCher/5MvV5/9rf/9ua7P/z2/WUrO6FATgYIhTr/5Uc/+OXvtz2J6ZSLr89aHmY0tKSIWqEV49073vnR//z3f1gsXq5NrmMK5LD605+vh3nW9D7Dc/y663YzMUGrhBS0tPM33/XB9791+5dLS1oXwTTaqxvmuef+7TfPp74/7A9BpCBfRZb7uY6hVICtlm+/973vurmZhnq9RLRcc78WCKF32+Wbbz4bDn97Iioavjqe3ZZEeRHb3Xvevbi/bK2qVYUmyJ7ch4Bqu7ya/vWnNaDUa6s0uxsy7kKWn3p//f2PQJUWEXsty8MmxAABVRhc/+vfs1bJay/WzS5znSSpd3354le//tsGLeEF0PJmVjAnIIBx2Oy2NPH1qeVpzuuV1/zdZz/48O2/7GZK1JgWhHXXxELAGBGRzLFtt088v/WRFDkn5prXq15ef/Ef/zX+7if/PoCiCC3XvN3kPoIgQDnA5t+dfvh05H65D4mtqr39ia9/6l/+vF5WhBybz+7u9qbVNDxtt4fPdalOhbp4jNN09Ymvfuadw7wIcu3wbqfqWRRPtul82TeH9onb00jVC1Ed7j78+c9/YAp08zBMujvmtp3ohJa1POuHj17cLGYiBOnDN7750QVysoamabk0+9S1XR4qVbQvoOthrkMCfd71b71HC+jio4nQJXoQuhMoBPIFlRvMsA0682az/XAVclw+OQ9v2gNhNxEBX0NK18sQSpj0ecYGItceNc01zNMe5NKJI19DSHdhM3NhcTGgCkZy28WDN5P3djoteUWS+zBCxyCc31wkHPO8NT3qyWd7xh99JKHT5jpOW8vrBYl1t5s83mU3SY92yd6YdzoobTuEsRCFHGJIaFSjQ95cHiaP04UidPh0ojLsMCGBPK62gSRyDbvoHV84u8yWebhTe9QlIznWErTtH/f0AJIV9Lk+dBsR9cabXQnWZSxJletdBIhJkGM+mI4f6IKxPOy9SOVpGz29hr7jOISnfSpfPcwXp+QmzDV9rtYRwuk63feOlL4g174GTyJFkcP1e26a9Soq5+5mb9z2iY1NvmF1Ny2FHPZXz1pM0tzv7jsXhezr1Kk0Yqy9nUoj6iY96SN95Gnu+xDKcck5h8sLkNHLw/zkZU/2oaRDUqltubbESp1KPRn7SG91mqhuPh11yeii/2OxUDRFVGoeTx/5eL7rCVEv7b/bUhDYEEY9+9l9rESXV/Xq9b+v5aQCqVP54D7UO30g1z4zEZFSVXP9WaUrqnx0fmQsyecjl7Jan27/cuSc+fK1TPsOaNBHyrWiaq214ebKC5VK0V37CHPcZm/snQR9KPfVq4ZhzHgz6PV6qbyZd9duvnJ7xg77zNPpVa2VF2cc8/7e+t7bZXT6YKe0bFob9/M4oMrbydoPGCbXNFIfeFg2VXMeJ3Rf9SA/dWZjjLTovZ0Gf/yxbLt5rB4dYrvLz87z5v3qEAFN4bZNMXPtqqL86DnvpvQBbxbMqxnk9PyHYZduvl7Qeb2W53appCf9GAz2uR5F8fCvDZ5IORfzG7Cx7yChav/PFc+f2+W6bX7DZp/aHSDjbjd7Eu2w6PJDS++gB+1RqIN49kSJKuqSRD8jkd5YvnaQwHSWVvL8XX5o6/KwRw+TnnRpgRQ1nLWLZikhqB/ie+aDS5HAdLlvgByX+an5ynoweqdg19gWux6Ox2L7Zu07PF21d8zZTBWONchPzQf7SKy3EgSsRQ9CGPLd2ylfWU+u7zEn9Twk/Lc2H9ulS95Nz0I3bQzH0kf6qvt8cD4+T8c8zOgBSMD2gW/7iUH0AT3JcQdtw0jID+6dOc778+YIhYDjALn2g+hmzbt7VG/EYATIMO56+NmHIXunR6zuyrvTOIL6WZrP5t3oxk4JgizGWHKuH/PhfLLdHWdzHJaD2ejQ/OYzQnSXogKLNot2Sb8aZXUZQgxQamwY+RM4iNwOw5wcpmbDfrldsMsx71cbS+Vxv0vD3K6pLtPuokLQdb/W40GZ2w6DgMmcA3bKr9/NdDkHzF4ht9Uv14PbDgRymA27m9++3HZ6aF89uXb3p7Cbc3QiD9td0Knfrk51epzNqh+F/5872V2HBDabLqA+iH6xRITR7AC4XqWHF079YuPiUJKzhKfHmZeeX7ZHSUnO6SKBzI894ItFvwpRl5QRNTRiAZL+70MgL/WLdhGr8jzXmS0BwmrLcV7kdz3JeaFLHlZISF+vJEB+pyAP835sA7GW1+++oxT2TuoXeBqbT87V4xovn91r+N+/wXrPTmirmt4sVDr0a321alUO27OJ45n7fp19ZM8QoP99OxWCOuUYOnTpJ/SgCUsPznWQAuf1+mwhcltK7nOtXTpUfQ/dqaHl8bAdECR5WNxyvMNtlxyDLseYb7oHhHme4w6A6mF654Cwy063nUqqKOib3M7MsQ/UoSP0t28wdPls5JhrvnkIAVZQOCByDQAAsCwAnQEqjABpAD6JNJZHJSKnoTDUbVDwEQloJwG+951CymZ/OrNfwmu3PGfEKmP7l84foY8wjnyeYb9uv1y93z/Wet3+6+oB0vHol9MD+6PpZ4MK182DzWeFqI7zA4g5eCALrMNWVXMmbf5D0adBL1p7B/TD9IT9sHUhiO6xJPKrAHSaRVTDJhcg7d7ocfj4EM3zD+GVEquct/nf3MaDqFbKwDovTr//gdCsE8+RQRoQBE0B8EzM0/ktVcCoshSzLGqS6//zsNks8fBrOI3vLaRCWtCTbCgnXkfamO1Gd2uCW4OzcYJNDpbwWCl23c75qx4sjFXAiO/hdiRH78xeCOh6D4fczsyiJI0CjIM7r9aSFL70IH92ovXx8lXRPeEqZTfFG8VM2hl0ulcG75vP1wWh6iq5WICO8gDYVwaipIiiQnaQiWpvV73imyt/niIUKDcsZMawju66eHfa004PPg910bRgjqOqxdz55Q0AAP7+Bv9/pOEOM2G/a90bu8r7yy51OjOrOtUifnvttZ+LMUlQ90/GOm3hW7JRY9jzVIzrZ1XOn0RLJEoWrXojL613YYqurn82JzHJbO0qsWsmTd22hUMKUcW3TsL7uKE+ENSpRq+HFrf8EHoyEoE3Ued2Pab/uwzzRf1npr7m07qmhIZyKYP5nxIF5nP4mjCRgrYNyJBX09yivglcpsN520mEBH4MdQQ2WdTgx9DVaxRUGpzjCQcAarmurYvg2HKgaaGtSjre7bn9I+uaWyKpG6UBjebEqgFerihqy22xqDuuCN9PiM12rPUs//Ob6Jf3CV+twXrLiwwNjOsHXz5zgZbv8eFrIDGZNtLrlI2Zi5/9KSWtLSw9ATKBsQZj1mRCcB+ZRgp+6c1k/lqAZ0rmG/MhYm5ujG4fELQrrQ822mGu/jS3VGJxSUpgcgKh1kOijP7nfkGOcCKs4OBG31T+4MJ0PuiShS5NPGymMYbt+MNvmnYnlht8hR9hUmx/ejDAA7hukR3dLGcw0aZOZtniYaZlvLRiEjehS21GC8YYqmH3wLIHPIoICBNCMWgHd6L9keUFiVKG39P/STTqBlPw0l+VdLsQ2R9h2wGPwEGddUtWrVo/PXXUENB9nTPT3b7DC+EjQ6RrSX8LnCfwmEdwvQVkwUn2lztAnCUWvg13DY1NdJGeG8JAPqPrja5zXBVxjKP64iwiTVG0o3QlzTxmTM+ytPFd4vyzzfxsk9Q4hPk+sEDIx+OZuCX3nZx14mZAJpfWHrtBlh2zJv9lgobNH1KrTwO+ZJ+T+D85m28qixfRaFjY3dXPUl8YKEb/LQEJvHutAQBZ4Jd20GCAneK1ObkCwxuqAH496wG4UHpY83wxs/PVAPnBpfy7x2N6zxIaDvkX9xPrGzwibha6pdo4f1elA/uEILzaqnZtqOu2JJY3XJ85wZsWNwnCWfPReOmZPB8JkwLvbYbDkHHuOvFu4dcnsVP7iJTAHOuXVBkMtI7arZIGSqYdVjR93aL9fXBvdXgow8/PT7cIx9LMSYFFr96pWsckMSQkiZOA0jNeIhrmvcuoTU7IRaNzoUAg1avF6WEygWHRSReJki13wNP62eJuHaH/aTNmUB8lxtkXXzmF1yL59N64fvq2Rsuwbz//Mr5Qr0cefgasLwCXkqAuhoPMwsnVfmMj54dHe3l6JIYimJcOIagedQFCFFOZ4dvRlXkTQDy3eqM9CzzlmUtuPipBDBGjjud5Sfpof5H9GR5Ke54Yy66xFL67fOYZ+nh5fxIHTyCv5NZ9W1YZekOilJbwf4CwdBlox+ljPnkeeqDiapTeADaH4fFEcXeVKgKqLytoTF+QM2kqPz25xaNVMuEC1j/7QADViDGb8yH/yFsLC/nlcR7oU3EYWoerkqNebrazwmXGZtcjs2TBsdSb6SjkywIP3aelESvI9Ms/nBM2sgb2fDvwpJhDCNfZN5ncxZbChy8onxX/OkZWcLLsHg8Yp//FE7K6Rg1/TY32ZBmBM17dwA3RtYlmwu2B8ZSgJ83Kin+y8FenMADd+wZzzsnHUr/pQQibWdrD6W+Dl0Bk/Y9T2gAYdbT5BKE896qa8O+rnaoycaqb90U+nSqeQYtt9QjJX1cdSodFsGL3DEQeAS0KjV45zVJxcpefgmlj/Xn16WcfqKGw7qy/A3Qe1k90Hm7TOT+ZA9RNEfeaytQ/sumPYOa5p1ToJ5w+GgQV9a/RgpAgTgdp2OS1GjrXQHkfyLpsGL01O4klbi8tSCds7u5OMqWxeDXu+/ItIHevnfY/8L6SAv5dDFh9uNDHBdYEUt1PQE2upNwImtP97vSd6+Seju7QyOF1+dT/uWj270fH+mY4FVsjXnh4jVrHP2lFhMA4dcy13cFveBrW4ZzXQPhRIkbr4InXYqzSodN+oUq1tCWp7A2u1X80aYzOCjkd7OnbWXgkTNC5g4NoUBacRbSKEEFSFgcSnibmF8qHm82bAve69h6wHj1/xeeHIKlySj36uPSzKlmcLja1lANMtR6bwo17RDe8A7EFBvyzYWA3HGrSFVA20EvxZjRChJdrK5IKhB+sPXBf5SbCclDPbQ+AL+802TE6pfRrzDTfB1cpSSglhlmIS4sw+Y6nKDFpkQKISmCmSWnmNLe3fqIMyrGgkBBKVY0AC7Gax4XO/kNtX7fA154ybUvM+mzAxX2nZWSIJ+ZMrwk+Mdyczge8v7i1YLVvgYSaGp4O41lTdmT7ejqqWtn2VA4kZwLpbDg28CUCI4A8g9K32hvkMrI+pbB/4d8U9AVVo/3qnNbnQanAzWJckIMRsTv/RKM31YUtqJPoYPbwSYOhAZ//WlnNfkslAneZq+THfe49jXXHDwhxN0ob4YrSV2YtCHnFd0BCUtCCQLbaEHzibWs4TW0knRrDO+rdja4g1ger5md3dWyfvyREgR+uWj2UGPPsdXwKzsNVr9UsYCcHyouxvJL246orhxHzAWxHDCX92LgpDcrFaTOhMc8S8QBHBko8BGtNSLgCERC/YFGoKHJh1Jf8XpihWAP3iznc9WbSNFcpC1JQk3bahPb2cSip1vp3X7TgvdmhH2kmrRney/7TbduN98VvgPFu8bm8eGG8ZEm4ADQwljQ5eSwYTTtny8zYxjIxk106Ugsth8da7+0m8DEX+Cw1WigZfvbaBSKgWb3I80XGJhabYH+3x9iF/mJsL19TpU2/jxrWgYCZJG92NuvUr6vZ3h60UFFl1gnwNkFTkk52FTd5xGUH386BlThQwNV9SOu3JI5eO+tzdV6qRlbpZKRJ0TKmXAGQ5AFO6BSe8D/aUrsQaGRJQzTRnU3BahrT0O4tF3vBHK10zEbMCN8+o3Sbu1zUSQRM6nds3DOQybCsgpRvMgb/7WaV4OS+z+KvJkfXCOzXYgj3zFqXGhNCjd/l1f8fpBfGwC0/hfKdQFJ1D/LLHfvM+/V/TupuPtY+eZZ6cfa05E+bXH3y4JhAe+qUYOB0g0XEp6UZHRhnWB8ZBPmUU7u5eNvi3iqZ2Bzn+b4PvUjyqdtdMN3sKrc8xudaB5/K7n/m+Y/ILIO/p/5b0Jv2f5fYglArsVPURy/hlmJypGB9jgRo3j0EMAMk/ITgGSNtukMEe6eznBAb84coLmz3yFhZ/F21UKFyE9UnN2em721BFV6jEIk7vYVpaohkNOxfAbE+zkpuRz33SsqSMsYn6II1UVqVGU8VbmHZU0fMBnxLQwRqN/8AFE84YuvTUq3/byhDuCIIGgie8Xn6XA1mIwepZ+lNKKAJCYmkYrQTLezUcgzLkUzBdpcfO2dvWpOswNGyYOikxVe2m/1D9fCkhK5SFF9asF1Hfc/DEYvsC2BqaG5APypnt6uGbKOw8BUbq9y42eWf8Gwva0LZJb+Bei8pKBZKn+HqDs8femoz4lun9+bv4+1p+Zf4saxOgARwNE6CEq5c+NyH0fO2yOeMMa0BYIQzGv7oc2w3M4p7hBePFwnSQ2zLAe3uHfjV07m+yCzALvYISyTsYEDIXj9NRwuGPBqyh0oW8vJxKy3e9KULT2LJWVzUetxQxocPv6+Onv7lQKCLYkBND8EnsXx9SwYOUp/REjkIa3yhQVVKB4QuSi9sRZpr1BDIxwywikiYP8ku68bmXj5FZGQ+GrPkLphaXwKdRKbkBNvxeW9RykcTSGxVa3CqrFAXqxOoAUI5se2ulvDhqAqZQ6L7HCV+RhsFTKTkNo7WCuAmX+dAqz96+y3z4A2nq1fJl/SEE9RZZnB6GbUmHdb9mL/fwPM/aqmb0v+0gFCVbJosN/bLhZgmcMfdXYmv6Kz1eAG7GaszC+JsLFkPsw03Alas9SzMqHvSXZ7wZ3a0OBv5/x5PmeFG03MLXImA2kZPGtfIPUUjPXNNViLAKkilOyUtAZzZ7rVhIhAD6u9O9IaLFM7t/i63K8r0+LP29azyAhizZfmCveR5wHFzcyUKy+JN2ndS7mK4tOoMKp0blwq0QTchMZ3sVhkf4oivl0nCzYZa2tSsQMB8YK38HhM9XYAetuopSSkUOd6rUSzbQfiP7fFsazxgQe5gxxuU6KTjr1CiUPIeXFsxJ37XMkYVVcgAAA==';
   const KNOWN_TOKENS = [
     { symbol:'WLD',  name:'Worldcoin', address: WLD_ADDRESS, decimals:18, icon:null },
-    { symbol:'ZORP', name:'Zorp Token', address: ZORP_TOKEN, decimals:18, icon:null },
-    // Dirección de USDC puesta directamente (en vez de USDC_ADDRESS) porque esa
-    // constante se declara más abajo en el archivo y esto se ejecuta antes.
-    { symbol:'USDC', name:'USD Coin', address: '0x79A02482A880bCE3F13e09Da970dC34db4CD24d1', decimals:6, icon:null }
+    { symbol:'ZORP', name:'Zorp Token', address: ZORP_TOKEN, decimals:18, icon:null }
   ];
 
   // Lista curada: tokens que el usuario confirmó como confiables/operativos.
@@ -1848,72 +1931,6 @@
   let provider = null;
   let mk = null;
   let userAddress = null;
-
-  // ------------------------------------------------------------
-  //  Caché local de tokens: guarda la última lista con saldo que se vio,
-  //  para pintarla de una al entrar (sin el relojito de "Leyendo tus
-  //  tokens…") mientras loadBalances() la actualiza por detrás sin que
-  //  se note. Se guarda por dirección de wallet, así cada cuenta ve la suya.
-  // ------------------------------------------------------------
-  function tokenCacheKey(addr){
-    return 'buzz_cache_tokens_' + (addr || '').toLowerCase();
-  }
-
-  function guardarCacheTokens(addr, shownTokens, totalText){
-    try{
-      localStorage.setItem(tokenCacheKey(addr), JSON.stringify({
-        tokens: shownTokens,
-        total: totalText,
-        ts: Date.now()
-      }));
-    }catch(e){ /* si el storage está lleno o bloqueado, no pasa nada grave */ }
-  }
-
-  function leerCacheTokens(addr){
-    try{
-      const raw = localStorage.getItem(tokenCacheKey(addr));
-      if(!raw) return null;
-      return JSON.parse(raw);
-    }catch(e){ return null; }
-  }
-
-  // Pinta la caché tal cual, con el mismo HTML de fila que usa loadBalances,
-  // para que no se note el salto cuando la lectura real la reemplace.
-  function pintarCacheTokens(cache){
-    const listEl = document.getElementById('tokenList');
-    if(!cache || !cache.tokens || !cache.tokens.length){
-      return false;
-    }
-    listEl.innerHTML = '';
-    cache.tokens.forEach(r => {
-      if(tokensOcultos().includes((r.address || '').toLowerCase())) return;
-      const tk = { symbol: r.symbol, name: r.name, address: r.address, decimals: r.decimals, icon: r.icon };
-      const iconHtml = tkIconHtml(tk);
-      const row = document.createElement('div');
-      row.className = 'token-row';
-      row.style.cursor = 'pointer';
-      row.innerHTML = `
-        <div class="tk-icon">${iconHtml}</div>
-        <div class="tk-info">
-          <div class="tk-name">${r.name}</div>
-          <div class="tk-sub">${r.symbol}</div>
-        </div>
-        <div class="tk-amt">
-          <div class="tk-bal">${trimNum(r.balance)}</div>
-          ${r.usdValue != null ? `<div class="tk-usd">$${Number(r.usdValue).toLocaleString('es',{maximumFractionDigits:2})}</div>` : ''}
-        </div>`;
-      row.onclick = () => r.esLanzado
-        ? abrirLanzadoPorDireccion(r.address)
-        : openTokenDetail(r);
-      listEl.appendChild(row);
-    });
-    if(cache.total){
-      const totalEl = document.getElementById('totalUsd');
-      if(totalEl) totalEl.textContent = cache.total;
-    }
-    walletTokens = cache.tokens;
-    return true;
-  }
   let username = null;
   let fromToken = KNOWN_TOKENS[0];
   let walletTokens = [...KNOWN_TOKENS]; // se actualiza en loadBalances con los tokens reales de la wallet
@@ -1957,6 +1974,7 @@
     if(name === 'tendencias' || name === 'swap') loadTrending();
     if(name === 'tendencias'){ renderLpStrip(); cargarLanzados(); }
     if(name === 'perfil'){ cargarPerfil(); vigilarSecciones(); }
+    if(name === 'ganar') initGanar();
     if(name === 'crear') initCrear();
     if(name === 'anunciar') initAnunciar();
     if(name === 'lanzados'){
@@ -2007,13 +2025,7 @@
   }
 
   function openModal(id){ document.getElementById(id).classList.add('show'); }
-  function closeModal(id){
-    document.getElementById(id).classList.remove('show');
-    // Si se cierra la ficha de un token, se corta el refresco automático de
-    // "Operaciones recientes": no tiene sentido seguir pidiendo datos por
-    // detrás de una pantalla que el usuario ya no está mirando.
-    if(id === 'tokenDetailModal') detenerTradesEnVivo();
-  }
+  function closeModal(id){ document.getElementById(id).classList.remove('show'); }
 
   function copyAddr(){
     if(!userAddress) return;
@@ -2088,6 +2100,7 @@
 
       userAddress = address;
       username = (k.user && k.user.username) || '';
+      guardarSesion();
 
       onWalletConnected();
 
@@ -2133,15 +2146,7 @@
     document.getElementById('fromTokenBtn').innerHTML = tkSelectHtml(fromToken);
     document.getElementById('sendTokenBtn').innerHTML = tkSelectHtml(sendToken);
     await initEthers();
-
-    // Se pinta la última lista guardada de una, sin relojito, mientras
-    // loadBalances() actualiza por detrás. Si no hay caché (primera vez
-    // en este teléfono), loadBalances muestra "Leyendo tus tokens…" como
-    // siempre.
-    const cache = leerCacheTokens(userAddress);
-    const huboCache = pintarCacheTokens(cache);
-    loadBalances(huboCache);
-
+    loadBalances();
     initAnuncios();
     ponerIconoLanzar();
   }
@@ -2244,16 +2249,13 @@
       const a = address.toLowerCase();
       for(const p of pares){
         const info = p.info || {};
-        // DexScreener no separa el logo por token dentro de "info": ese
-        // campo corresponde al par y en la práctica trae el logo del
-        // baseToken. Si el token que se pidió es el quoteToken del par
-        // (como pasa con USDC casi siempre, por ser la contraparte de
-        // pares WLD/USDC), usar info.imageUrl le pondría el logo del OTRO
-        // token — que es justo el bug que hacía que USDC mostrara el logo
-        // de Worldcoin. Solo se usa cuando el token pedido es el baseToken.
-        const esBase = p.baseToken && p.baseToken.address &&
-          p.baseToken.address.toLowerCase() === a;
-        if(esBase && info.imageUrl) return info.imageUrl;
+        let url = info.imageUrl || info.image || null;
+        // si el token es el de la derecha del par, el logo puede venir aparte
+        if(!url && p.baseToken && p.baseToken.address &&
+           p.baseToken.address.toLowerCase() !== a && info.baseImageUrl){
+          url = info.baseImageUrl;
+        }
+        if(url) return url;
       }
       return null;
     }catch(e){
@@ -2266,29 +2268,9 @@
   //   2. el logo guardado en el contrato de swap (instantáneo, sin límites)
   //   3. DexScreener
   // Antes de pedir nada se mira la caché, para no gastar pedidos al pedo.
-  // Logo de USDC como SVG incrustado (círculo azul con "$"), igual al que
-  // ya se ve en el resto de la app — no depende de ninguna API externa.
-  const ICON_USDC = 'data:image/svg+xml;utf8,' + encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-    '<circle cx="16" cy="16" r="16" fill="#2775CA"/>' +
-    '<path fill="#FFF" d="M20.022 18.617c0-2.345-1.406-3.149-4.219-3.49-2.011-.267-2.412-.8-2.412-1.735s.669-1.534 2.010-1.534c1.204 0 1.874.4 2.209 1.399a.499.499 0 00.474.334h1.082a.47.47 0 00.368-.166.47.47 0 00.1-.4c-.334-1.63-1.607-2.775-3.187-2.897v-1.399c0-.3-.234-.535-.602-.6h-1.002c-.301.066-.535.3-.535.6v1.365c-2.011.267-3.283 1.6-3.283 3.267 0 2.211 1.339 3.083 4.152 3.424 1.875.334 2.479.734 2.479 1.802 0 1.067-.937 1.802-2.211 1.802-1.742 0-2.345-.734-2.546-1.732a.5.5 0 00-.468-.373h-1.14a.47.47 0 00-.367.166.47.47 0 00-.1.4c.3 1.87 1.474 3.188 3.923 3.556v1.4c0 .3.234.534.602.6h1.002c.301-.067.535-.3.535-.6v-1.4c2.011-.334 3.417-1.735 3.417-3.556z"/>' +
-    '<path fill="#FFF" d="M12.868 24.153c-4.62-1.655-6.998-6.775-5.308-11.328 1.006-2.667 3.09-4.734 5.808-5.723a.44.44 0 00.301-.435V5.6a.4.4 0 00-.201-.367.36.36 0 00-.334 0C6.508 6.968 3.025 13.91 5.371 20.484c1.406 3.858 4.42 6.834 8.336 8.209a.36.36 0 00.334-.033.4.4 0 00.201-.368v-1.066a.44.44 0 00-.301-.401zm5.976-18.919a.36.36 0 00-.334 0 .4.4 0 00-.201.367v1.067c0 .2.134.367.301.434 4.62 1.655 6.998 6.775 5.308 11.328-1.006 2.667-3.09 4.735-5.808 5.723a.44.44 0 00-.301.435v1.067a.4.4 0 00.201.367.36.36 0 00.334 0c6.63-2.1 10.113-9.045 7.767-15.618-1.406-3.834-4.386-6.81-8.267-8.17z"/>' +
-    '</svg>');
-
   async function getGeckoIcon(address){
     const addr = address.toLowerCase();
     if(addr in geckoIconCache) return geckoIconCache[addr];
-
-    // USDC es un token "core" con dirección fija y conocida: se le pone un
-    // logo propio de una vez, sin depender de las fuentes externas. Esas
-    // fuentes (GeckoTerminal y sobre todo DexScreener) a veces devuelven el
-    // logo del OTRO token del par cuando USDC aparece como quoteToken —
-    // esto fue justo lo que hacía que se viera el logo de Worldcoin en vez
-    // del de USDC.
-    if(addr === '0x79a02482a880bce3f13e09da970dc34db4cd24d1'){
-      geckoIconCache[addr] = ICON_USDC;
-      return ICON_USDC;
-    }
 
     const cache = cargarCacheLogos();
     if(addr in cache){
@@ -2420,16 +2402,11 @@
     }
   }
 
-  async function loadBalances(silencioso){
+  async function loadBalances(){
     try{
       const p = await getReadProvider();
       const listEl = document.getElementById('tokenList');
-      // Si ya hay algo pintado de la caché (silencioso=true), no se pisa con
-      // el mensaje de "Leyendo tus tokens…": el usuario sigue viendo la
-      // última sesión mientras esto corre por detrás.
-      if(!silencioso){
-        listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
-      }
+      listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
 
       // lista fija: WLD, ZORP y los tokens curados que confirmaste como confiables.
       // Se lee cada uno directo de la blockchain (símbolo, nombre, decimales, saldo) —
@@ -2443,13 +2420,7 @@
       // agregados iban últimos y, como la lectura va de a 30 por tanda, si
       // una tanda fallaba se perdían justo esos. Yendo adelante, son los
       // primeros en leerse y ya no dependen de que todo lo demás salga bien.
-      const primeros = [
-        WLD_ADDRESS.toLowerCase(),
-        ZORP_TOKEN.toLowerCase(),
-        // USDC no estaba en esta lista, así que loadBalances nunca preguntaba
-        // por su saldo: por eso no aparecía aunque el usuario sí tuviera.
-        '0x79a02482a880bce3f13e09da970dc34db4cd24d1'
-      ];
+      const primeros = [WLD_ADDRESS.toLowerCase(), ZORP_TOKEN.toLowerCase()];
       let candidateAddresses = primeros.slice();
 
       (delContrato || []).forEach(a => {
@@ -2471,61 +2442,12 @@
       // Primero se intenta con el contrato lector: una sola consulta en vez
       // de una por token. Si por algo no responde, se cae al método viejo
       // de leer token por token, que es lento pero seguro.
-      // Revisa que lo que mandó el contrato lector tenga sentido antes de
-      // confiar en eso. Un RPC público bajo carga (más común en redes
-      // móviles inestables) a veces no tira error pero devuelve datos
-      // incompletos o mal armados: menos filas de las pedidas, direcciones
-      // que no coinciden con lo que se preguntó, o varias filas marcadas
-      // como "ok" pero con símbolo y nombre vacíos a la vez. Antes esto se
-      // aceptaba igual y el token aparecía sin saldo o directamente no
-      // aparecía. Ahora, si algo de esto pasa, se descarta todo el lote y
-      // se cae al método lento (token por token), que es más lento pero
-      // no inventa datos.
-      function datosDelLectorSonConfiables(datos, addressesPedidas){
-        if(!datos || !Array.isArray(datos)) return false;
-        // el contrato debería devolver una fila por cada dirección pedida
-        if(datos.length !== addressesPedidas.length) return false;
-
-        const pedidasSet = new Set(addressesPedidas.map(a => a.toLowerCase()));
-        let filasOkConDatosVacios = 0;
-        let filasOk = 0;
-
-        for(const d of datos){
-          if(!d || !d.token) return false;
-          const addr = d.token.toLowerCase();
-          // cada fila tiene que corresponder a una dirección que realmente pedimos
-          if(!pedidasSet.has(addr)) return false;
-
-          if(d.ok){
-            filasOk++;
-            // una fila "ok" sin símbolo NI nombre es sospechosa: probablemente
-            // el RPC devolvió la llamada a medias
-            const sinSimbolo = !d.simbolo || d.simbolo.trim() === '';
-            const sinNombre  = !d.nombre  || d.nombre.trim()  === '';
-            if(sinSimbolo && sinNombre) filasOkConDatosVacios++;
-          }
-        }
-
-        // si hay filas marcadas ok pero ninguna trae símbolo/nombre, y había
-        // más de un par de ellas, es más probable que sea un problema del
-        // RPC que que justo todos esos tokens no tengan metadata
-        if(filasOk > 0 && filasOkConDatosVacios === filasOk && filasOk > 2) return false;
-
-        return true;
-      }
-
       async function readTokenInBatches(addresses, batchSize){
         try{
           const lector = new ethers.Contract(BUZZ_LECTOR, LECTOR_ABI, p);
           const datos = await lector.tokensDe(userAddress, addresses, true);
-
-          if(!datosDelLectorSonConfiables(datos, addresses)){
-            return await readTokenInBatchesLento(addresses, batchSize);
-          }
-
-          const conSaldo = datos
-            .filter(d => d.ok) // se descartan las filas que el propio contrato marcó como no válidas
-            .map(d => {
+          if(datos && datos.length >= 0){
+            const conSaldo = datos.map(d => {
               const addr = d.token.toLowerCase();
               const known = KNOWN_TOKENS.find(t => t.address.toLowerCase() === addr);
               return {
@@ -2538,15 +2460,10 @@
                 icon: known ? known.icon : null
               };
             });
-          const vistos = new Set(conSaldo.map(r => r.address));
-          // las direcciones que el contrato marcó como no-ok, o que faltaron,
-          // se reintentan por el camino lento en vez de darlas por saldo 0
-          const resto = addresses.filter(a => !vistos.has(a.toLowerCase()));
-          if(resto.length){
-            const reintentoResto = await readTokenInBatchesLento(resto, batchSize);
-            return conSaldo.concat(reintentoResto);
+            const vistos = new Set(conSaldo.map(r => r.address));
+            const resto = addresses.filter(a => !vistos.has(a)).map(a => ({ address: a, bal: 0n }));
+            return conSaldo.concat(resto);
           }
-          return conSaldo;
         }catch(e){ /* el lector no respondió: se sigue por el camino largo */ }
 
         return await readTokenInBatchesLento(addresses, batchSize);
@@ -2680,6 +2597,23 @@
       }
       priced.forEach(r => { if(setLaunchpad.has(r.address)) r.esLanzado = true; });
 
+      // los que siguen sin precio (DexScreener no los conoce o falló): se calcula
+      // desde los pools reales contra WLD. De a pocos, para no saturar el RPC.
+      const sinPrecio2 = priced.filter(r => r.usdValue === null);
+      if(sinPrecio2.length){
+        listEl.innerHTML = `<div class="empty-state">Calculando precios (${sinPrecio2.length} tokens)…</div>`;
+        for(let i = 0; i < sinPrecio2.length; i += 4){
+          await Promise.all(sinPrecio2.slice(i, i + 4).map(async (r) => {
+            try{
+              const pu = await precioRespaldoUsd(r.address, r.decimals);
+              if(pu != null && isFinite(pu) && pu > 0){
+                r.usdValue = parseFloat(ethers.formatUnits(r.bal, r.decimals)) * pu;
+              }
+            }catch(e){}
+          }));
+        }
+      }
+
       listEl.innerHTML = '';
       let totalUsd = 0;
       let anyShown = false;
@@ -2713,16 +2647,10 @@
         geckoUrls.push(...res);
       }
 
-      const ocultos = tokensOcultos();
       priced.forEach((r, i) => {
         const geckoUrl = geckoUrls[i];
         const formatted = ethers.formatUnits(r.bal, r.decimals);
-        // Un token oculto no debe sumar al balance total: si no, el usuario
-        // lo esconde de la lista pero el número de arriba sigue inflado con
-        // un valor que ni siquiera puede ver ni operar (típico en spam con
-        // precio falso, que además no deja hacer swap).
-        const estaOculto = ocultos.includes((r.address || '').toLowerCase());
-        if(r.usdValue !== null && !estaOculto) totalUsd += r.usdValue;
+        if(r.usdValue !== null) totalUsd += r.usdValue;
 
         const tk = { symbol: r.symbol, name: r.name, address: r.address, decimals: r.decimals, icon: r.icon };
         const iconHtml = r.icon
@@ -2744,7 +2672,7 @@
             <div class="tk-bal">${trimNum(formatted)}</div>
             ${r.usdValue !== null ? `<div class="tk-usd">$${r.usdValue.toLocaleString('es',{maximumFractionDigits:2})}</div>` : ''}
           </div>`;
-        if(estaOculto) return;   // el usuario lo escondió
+        if(tokensOcultos().includes(r.address.toLowerCase())) return;   // el usuario lo escondió
         const tkForDetail = { ...tk, icon: r.icon || geckoUrl || tk.icon, balance: formatted, usdValue: r.usdValue };
         row.onclick = () => r.esLanzado
           ? abrirLanzadoPorDireccion(r.address)
@@ -2776,20 +2704,11 @@
       const totalEl = document.getElementById('totalUsd');
       if(totalEl) totalEl.textContent = totalText;
 
-      // Se guarda la foto de esta lectura para la próxima vez que el
-      // usuario entre: se pinta de una, sin relojito, mientras esto mismo
-      // se repite por detrás.
-      if(anyShown) guardarCacheTokens(userAddress, shownTokens, totalText);
-
       if(!anyShown){
         listEl.innerHTML = '<div class="empty-state">No se encontraron tokens con saldo en tu lista</div>';
       }
     }catch(e){
       console.error('loadBalances error', e);
-      // Si esto era una actualización silenciosa (ya había caché pintada),
-      // no se pisa la pantalla con el mensaje de error: el usuario se queda
-      // viendo su última sesión conocida en vez de un cartel de fallo.
-      if(silencioso) return;
       document.getElementById('tokenList').innerHTML =
         '<div class="empty-state">No se pudo conectar a la red: ' + (e && e.message ? e.message : 'error') +
         '<br><br><span style="color:var(--buzz); cursor:pointer;" onclick="loadBalances()">↻ Reintentar</span></div>';
@@ -2821,7 +2740,7 @@
   //  capitalización y suministro; el pool con más liquidez da
   //  variaciones, actividad y las velas del gráfico.
   // ============================================================
-  const FD = { addr:null, pool:null, poolAt:null, rango:24, velas:[], cargando:0, tradesTimer:null };
+  const FD = { addr:null, pool:null, poolAt:null, rango:24, velas:[], cargando:0 };
 
   // tokens que el usuario decidió no ver más en Inicio
   function tokensOcultos(){
@@ -3058,221 +2977,12 @@
     }
 
     FD.pool = poolAddr;
-    const tradesEl = document.getElementById('fdTrades');
     if(!poolAddr){
       document.getElementById('fdChartNota').textContent = 'Este token todavía no tiene pool con datos de mercado.';
       FD.velas = []; dibujarFdChart();
-      if(tradesEl) tradesEl.innerHTML = '<div class="empty-state">Sin pool: no hay operaciones para mostrar.</div>';
       return;
     }
-    // Antes cargarVelas() frenaba todo antes de arrancar las operaciones, así
-    // que se sumaba el tiempo de las dos, una atrás de la otra. Ahora arrancan
-    // juntas: el gráfico y la lista de operaciones se llenan cada uno apenas
-    // están listos, en vez de esperarse entre sí.
-    cargarVelas();
-    cargarTradesGecko(poolAddr);
-  }
-
-  // Tiempo relativo cortito ("hace 2 min") para las filas de operaciones.
-  function fdHaceRato(iso){
-    const d = new Date(iso);
-    if(isNaN(d.getTime())) return '';
-    const seg = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-    if(seg < 60) return 'hace ' + seg + ' s';
-    const min = Math.floor(seg / 60);
-    if(min < 60) return 'hace ' + min + ' min';
-    const hs = Math.floor(min / 60);
-    if(hs < 24) return 'hace ' + hs + ' h';
-    return 'hace ' + Math.floor(hs / 24) + ' d';
-  }
-
-  // Operaciones recientes del pool en el DEX, para CUALQUIER token con pool
-  // (no solo los lanzados en el propio Launchpad, que tienen su curva
-  // propia). Usa el endpoint público y gratuito de GeckoTerminal — el mismo
-  // que ya se usa para el gráfico — así que no hace falta un contrato propio
-  // ni una API key para ver quién compró y quién vendió.
-  function detenerTradesEnVivo(){
-    if(FD.tradesTimer){ clearInterval(FD.tradesTimer); FD.tradesTimer = null; }
-  }
-
-  async function cargarTradesGecko(poolAddr){
-    const el = document.getElementById('fdTrades');
-    if(!el) return;
-    // Si se venía siguiendo otro token, se corta ese polling antes de arrancar
-    // uno nuevo — si no, quedarían dos relojes pidiendo datos a la vez.
-    detenerTradesEnVivo();
-    el.innerHTML = '<div class="empty-state">Cargando…</div>';
-    await pedirTradesGecko(poolAddr, /*primeraVez*/ true);
-    // Mientras el modal siga en este mismo token, se vuelve a pedir cada
-    // 12 s — ritmo pensado para que se sienta en vivo sin gastar de golpe
-    // el límite de 30 llamadas/min que tiene la API gratis de GeckoTerminal
-    // entre todos los que estén mirando tokens al mismo tiempo.
-    FD.tradesTimer = setInterval(() => pedirTradesGecko(poolAddr, false), 12000);
-  }
-
-  // Contratos conocidos (routers, Permit2, factories propias) que a veces
-  // aparecen como "quien operó" en vez del usuario real. Esto pasa porque
-  // los swaps desde World App van por una cuenta inteligente + relayer: la
-  // transacción que termina llegando al pool queda firmada por ese router,
-  // no por la wallet que el usuario ve en su World App. GeckoTerminal solo
-  // ve esa transacción final, así que no hay forma de recuperar la wallet
-  // real de ahí — se avisa en vez de mostrar una dirección o nombre falso.
-  // Se arma la primera vez que se necesita (no al cargar el script) porque
-  // GEK_ROUTER se declara más abajo en el archivo.
-  let _routersConocidos = null;
-  function routersConocidos(){
-    if(!_routersConocidos){
-      _routersConocidos = new Set([
-        BUZZ_SWAP.toLowerCase(),
-        PERMIT2.toLowerCase(),
-        WORLDSWAP_ROUTER.toLowerCase(),
-        V3_ROUTER_REAL.toLowerCase(),
-        V2_ROUTER_REAL.toLowerCase(),
-        GEK_ROUTER.toLowerCase(),
-      ]);
-    }
-    return _routersConocidos;
-  }
-
-  function quienOpero(dir){
-    const a = (dir || '').toLowerCase();
-    if(routersConocidos().has(a)) return 'Router/Wallet inteligente';
-    return esc(comoSeLlama(dir));
-  }
-
-  // ------------------------------------------------------------
-  //  Wallet ORIGINAL de un trade externo (no lanzado en el propio
-  //  Launchpad). GeckoTerminal solo da tx_from_address, que en World App
-  //  es la cuenta inteligente/router que ejecutó el swap dentro del paquete
-  //  de Account Abstraction (ERC-4337) — no necesariamente la que el
-  //  usuario reconoce como "su" wallet en el momento de la firma.
-  //
-  //  El dato exacto está en el propio EntryPoint estándar de ERC-4337: emite
-  //  un evento UserOperationEvent con el "sender" (quien firmó el paquete
-  //  completo de acciones) como parámetro indexado — no hay que adivinar
-  //  filtrando logs de tokens, se lee directo.
-  // ------------------------------------------------------------
-  // No hay confirmación de qué versión de EntryPoint usa World Chain
-  // específicamente, así que se prueban las dos direcciones estándar
-  // conocidas — v0.6 y v0.7 — con el mismo topic de evento (el formato
-  // del evento no cambió entre esas versiones).
-  const ENTRYPOINTS_4337 = new Set([
-    '0x0000000071727de22e5e9d8baf0edac6f37da032', // v0.7
-    '0x5ff137d4b0fdcd49dca30c7cf57e578a026d2789',  // v0.6
-  ]);
-  const TOPIC_USEROP_EVENT = '0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f';
-  const walletOrigenPorTx = {}; // tx_hash -> dirección real (o '' si no se pudo)
-
-  async function walletOrigenDeTx(txHash){
-    const k = (txHash || '').toLowerCase();
-    if(!k) return '';
-    if(k in walletOrigenPorTx) return walletOrigenPorTx[k];
-    walletOrigenPorTx[k] = '';   // evita pedir dos veces a la vez
-    try{
-      const p = await rpcParaLogs();
-      const recibo = await p.getTransactionReceipt(txHash);
-      if(!recibo || !recibo.logs) return '';
-      for(const log of recibo.logs){
-        if(!ENTRYPOINTS_4337.has((log.address || '').toLowerCase())) continue;
-        if(!log.topics || log.topics[0] !== TOPIC_USEROP_EVENT || log.topics.length < 3) continue;
-        // topic[2] es "sender": la cuenta inteligente que firmó el UserOp
-        const sender = '0x' + log.topics[2].slice(-40);
-        walletOrigenPorTx[k] = sender;
-        return sender;
-      }
-    }catch(e){ /* si el RPC no responde, se sigue mostrando lo que ya había */ }
-    return walletOrigenPorTx[k];
-  }
-
-  // Formato de dólares que no colapsa a "$0" en trades chicos (frecuente con
-  // tokens de pocos centavos): igual criterio que fdPrecioLargo, con más
-  // decimales cuando el monto es chico en vez de redondear a cero.
-  function fdVolCorto(v){
-    const n = parseFloat(v);
-    if(isNaN(n)) return '—';
-    if(n === 0) return '$0';
-    if(n >= 1) return '$' + n.toLocaleString('es', {maximumFractionDigits:2});
-    if(n >= 0.01) return '$' + n.toFixed(4);
-    return '$' + n.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
-  }
-
-  async function pedirTradesGecko(poolAddr, primeraVez){
-    const el = document.getElementById('fdTrades');
-    if(!el || FD.pool !== poolAddr){ detenerTradesEnVivo(); return; }
-    try{
-      const j = await gtJson(`${GT_BASE}/pools/${poolAddr}/trades`);
-      const items = (j && j.data) || [];
-      if(FD.pool !== poolAddr) return; // el usuario ya abrió otro token
-      if(!items.length){
-        if(primeraVez) el.innerHTML = '<div class="empty-state">No hubo operaciones en las últimas 24 h.</div>';
-        return;
-      }
-      const trades = items.slice(0, 40).map(it => {
-        const a = (it && it.attributes) || {};
-        return {
-          wallet: a.tx_from_address || '',
-          txHash: a.tx_hash || '',
-          tokenEntrada: a.from_token_address || '',
-          esCompra: a.kind === 'buy',
-          vol: a.volume_in_usd != null ? fdVolCorto(a.volume_in_usd) : '—',
-          ts: a.block_timestamp
-        };
-      });
-
-      const pintar = () => {
-        if(FD.pool !== poolAddr) return;
-        el.innerHTML = '';
-        trades.forEach(t => {
-          const row = document.createElement('div');
-          row.className = 'token-row';
-          row.innerHTML = `
-            <div class="tk-icon" style="background:${t.esCompra ? 'rgba(49,213,131,.15)' : 'rgba(255,77,77,.15)'}; color:${t.esCompra ? 'var(--up)' : 'var(--red)'}; font-size:16px; font-weight:800;">
-              ${t.esCompra ? '↑' : '↓'}
-            </div>
-            <div class="tk-info">
-              <div class="tk-name" style="color:${t.esCompra ? 'var(--up)' : 'var(--red)'};">${t.esCompra ? 'Compra' : 'Venta'}</div>
-              <div class="tk-sub">${quienOpero(t.wallet)} · ${fdHaceRato(t.ts)}</div>
-            </div>
-            <div class="tk-amt">
-              <div class="tk-bal">${t.vol}</div>
-            </div>`;
-          el.appendChild(row);
-        });
-      };
-
-      // Se pinta ya mismo con direcciones cortas (rápido), y si alguna wallet
-      // tiene username en World App, se resuelve por detrás y se repinta con
-      // el @nombre — igual que ya se hace en Operaciones del Launchpad.
-      pintar();
-      completarNombres(trades, pintar);
-
-      // Para TODAS las filas con hash de transacción se intenta leer el
-      // "sender" real del UserOperation (ver walletOrigenDeTx arriba): es
-      // el dato correcto sin importar si la dirección que dio GeckoTerminal
-      // ya coincidía o no con uno de los routers conocidos, porque puede
-      // haber routers/intermediarios que la lista no cubre.
-      (async () => {
-        const conHash = trades.filter(t => t.txHash);
-        for(let i = 0; i < conHash.length; i += 4){
-          if(FD.pool !== poolAddr) return;
-          await Promise.all(conHash.slice(i, i + 4).map(async (t) => {
-            const real = await walletOrigenDeTx(t.txHash);
-            if(real) t.wallet = real;
-          }));
-          if(FD.pool !== poolAddr) return;
-          pintar();
-        }
-        // si alguna wallet recién resuelta también tiene username, un
-        // último repintado la muestra con nombre en vez de dirección
-        completarNombres(trades, pintar);
-      })();
-    }catch(e){
-      if(FD.pool !== poolAddr) return;
-      if(primeraVez) el.innerHTML = '<div class="empty-state">No se pudieron cargar las operaciones.</div>';
-      // si falla una actualización de las que se repiten solas, no se pisa
-      // la lista que ya se estaba viendo: mejor datos un poco viejos que
-      // un cartel de error tapando todo cada 12 segundos.
-    }
+    await cargarVelas();
   }
 
   function openTokenDetail(tk){
@@ -4852,23 +4562,6 @@
       fromToken = tk;
       document.getElementById('fromTokenBtn').innerHTML = tkSelectHtml(tk);
       document.getElementById('fromBalLbl').textContent = 'Saldo: ' + trimNum(tk.balance || 0);
-
-      // Al elegir qué vender, "Recibes" se completa solo con WLD (o USDC si
-      // justo se está vendiendo WLD), así el usuario no tiene que buscarlo.
-      // Solo se pisa si "Recibes" está vacío o quedó igual a lo que se eligió
-      // vender, para no cambiar una elección que el usuario ya hizo a mano.
-      const esWld = (tk.address || '').toLowerCase() === WLD_ADDRESS.toLowerCase();
-      const mismoToken = toToken && (toToken.address || '').toLowerCase() === (tk.address || '').toLowerCase();
-      if(!toToken || mismoToken){
-        const sugerido = esWld
-          ? KNOWN_TOKENS.find(k => k.symbol === 'USDC')
-          : KNOWN_TOKENS.find(k => k.symbol === 'WLD');
-        if(sugerido){
-          toToken = sugerido;
-          document.getElementById('toTokenBtn').innerHTML = tkSelectHtml(sugerido);
-          document.getElementById('toBalLbl').textContent = 'Saldo: ' + trimNum(sugerido.balance || 0);
-        }
-      }
     }else if(target === 'to'){
       toToken = tk;
       document.getElementById('toTokenBtn').innerHTML = tkSelectHtml(tk);
@@ -5058,12 +4751,7 @@
       findRoute(fromToken.address.toLowerCase(), toToken.address.toLowerCase())
     ]);
 
-    // OJO: loading se apaga recién en cada punto de salida más abajo, una
-    // vez que outAmount ya quedó con el valor definitivo. Antes se apagaba
-    // acá mismo, apenas se resolvía la ruta — el botón se volvía a habilitar
-    // mientras todavía faltaba la consulta al pool (cotizarEnCadena), así
-    // que si el usuario tocaba "Swap" en esa ventana, el mínimo se calculaba
-    // con una cotización vieja o vacía y la transacción fallaba al simular.
+    quoteState.loading = false;
     quoteState.route = route.type;
     quoteState.poolFee = route.poolFee;
     quoteState.worldSwap = route.worldSwap || false;
@@ -5089,7 +4777,6 @@
         quoteState.noRoute   = false;
         quoteState.outAmount = neto;
         quoteState.deCadena  = true;                 // vino del pool: el mínimo puede ser ajustado
-        quoteState.loading   = false;
         toAmountEl.value = trimNum(neto);
         updateSwapButton();
         return;
@@ -5110,7 +4797,6 @@
           const neto  = bruto * (1 - 50/10000);      // menos la comisión del 0,50%
           quoteState.noRoute  = false;
           quoteState.outAmount = neto;
-          quoteState.loading  = false;
           toAmountEl.value = trimNum(neto);
           updateSwapButton();
           return;
@@ -5119,7 +4805,6 @@
 
       quoteState.noRoute = true;
       quoteState.outAmount = null;
-      quoteState.loading = false;
       toAmountEl.value = '';
       updateSwapButton();
       return;
@@ -5131,7 +4816,6 @@
     const estimatedOut = usdValue / priceTo;
 
     quoteState.outAmount = estimatedOut;
-    quoteState.loading = false;
     toAmountEl.value = trimNum(estimatedOut);
     updateSwapButton();
   }
@@ -5167,12 +4851,6 @@
     const amountStr = document.getElementById('fromAmount').value;
     const amount = num(amountStr);
     if(!amount) return;
-    // Segunda barrera además del fix en refreshQuote: si por lo que sea la
-    // cotización sigue en curso, no se manda nada con un mínimo desactualizado.
-    if(quoteState.loading){
-      showToast('Esperá a que termine de cotizar', true);
-      return;
-    }
     if(quoteState.noRoute || quoteState.outAmount === null){
       showToast('No se encontró una cotización válida para este par', true);
       return;
@@ -5493,6 +5171,9 @@
         }
       }
     }catch(e){}
+
+    // DexScreener no respondió o no trajo WLD: se lee directo de los pools WLD/USDC
+    if(valor == null){ try{ valor = await precioWldUsdOnchain(); }catch(e){} }
 
     // control de cordura: si el número queda fuera de todo rango razonable,
     // es que se leyó el par equivocado y se prefiere no mostrar nada
@@ -6414,45 +6095,11 @@
     return LANZADOS_OCULTOS.indexOf(addr.toLowerCase()) === -1;
   }
 
-  const LZ_MAX_LISTA = 40;      // cuántos lanzamientos recientes se traen (antes 12: los tokens viejos con saldo real desaparecían del Launchpad apenas se lanzaban 12 nuevos)
+  const LZ_MAX_LISTA = 12;      // cuántos lanzamientos recientes se traen
   const LZ_SLIPPAGE  = 3;       // % de tolerancia
 
   let lanzados      = [];
   let lanzadosAt    = 0;
-
-  // ------------------------------------------------------------
-  //  Caché local de "Tokens lanzados": misma idea que la de "Tus tokens"
-  //  en Inicio. Se guarda la última lista vista para pintarla de una al
-  //  entrar (sin el "Cargando…") mientras se actualiza por detrás sin que
-  //  se note. raised/meta son BigInt y no se pueden guardar tal cual en
-  //  JSON, así que se pasan a texto al guardar y se reconstruyen al leer.
-  // ------------------------------------------------------------
-  const LZ_CACHE_KEY = 'buzz_cache_lanzados';
-
-  function guardarCacheLanzados(lista){
-    try{
-      const plano = lista.map(t => ({
-        address: t.address, curva: t.curva, nombre: t.nombre, simbolo: t.simbolo,
-        decimals: t.decimals, raised: t.raised.toString(), meta: t.meta.toString(),
-        graduado: t.graduado, icon: t.icon || null
-      }));
-      localStorage.setItem(LZ_CACHE_KEY, JSON.stringify({ lista: plano, ts: Date.now() }));
-    }catch(e){ /* si el storage está lleno o bloqueado, no pasa nada grave */ }
-  }
-
-  function leerCacheLanzados(){
-    try{
-      const raw = localStorage.getItem(LZ_CACHE_KEY);
-      if(!raw) return null;
-      const data = JSON.parse(raw);
-      if(!data || !Array.isArray(data.lista)) return null;
-      return data.lista.map(t => ({
-        ...t,
-        raised: BigInt(t.raised || '0'),
-        meta: BigInt(t.meta || '0')
-      }));
-    }catch(e){ return null; }
-  }
   let lzOrdenActual = 'tendencia';
   let lzActual      = null;     // token abierto en la ficha
   let lzSaldo       = 0n;       // saldo del usuario en ese token
@@ -6488,19 +6135,6 @@
     const el = document.getElementById('lzLista');
     if(!force && lanzados.length && (Date.now() - lanzadosAt) < 60000){
       renderLanzados(); return;
-    }
-    // Si no hay nada en memoria todavía (recién se abrió la app) pero sí hay
-    // una foto guardada de la última vez, se pinta esa ya mismo: así el
-    // usuario ve su lista de una, sin relojito, mientras la lectura real de
-    // abajo la actualiza por detrás sin tapar la pantalla con "Cargando…".
-    if(!lanzados.length){
-      const cache = leerCacheLanzados();
-      if(cache && cache.length){
-        lanzados = cache;
-        renderLanzados();
-        renderMcGrid();
-        renderLpStrip();
-      }
     }
     if(el && !lanzados.length) el.innerHTML = '<div class="empty-state">Cargando…</div>';
 
@@ -6546,14 +6180,8 @@
       lzCargarIconos();
       enriquecerLanzados();
       cargarDestacados();
-      // Foto de esta lectura para la próxima vez que el usuario entre.
-      if(lanzados.length) guardarCacheLanzados(lanzados);
     }catch(e){
       console.error('lanzados', e);
-      // Si ya había algo pintado (de la caché o de una lectura anterior),
-      // no se tapa la pantalla con un cartel de error: el usuario se queda
-      // viendo lo último que sí se pudo leer.
-      if(lanzados.length) return;
       if(el) el.innerHTML = '<div class="empty-state">No se pudo leer la factory<br><br>' +
         '<span style="color:var(--buzz); cursor:pointer;" onclick="cargarLanzados(true)">↻ Reintentar</span></div>';
     }
@@ -6694,27 +6322,13 @@
     }
     // el orden lo elige el usuario con las pestañas de arriba
     let lista = lanzados.slice();
-
-    // filtro de texto del buscador: nombre o símbolo, sin importar
-    // mayúsculas/minúsculas ni si el token es de los más recientes
-    const buscarEl = document.getElementById('lzBuscar');
-    const q = buscarEl ? buscarEl.value.trim().toLowerCase() : '';
-    if(q){
-      lista = lista.filter(t =>
-        (t.nombre || '').toLowerCase().includes(q) ||
-        (t.simbolo || '').toLowerCase().includes(q)
-      );
-    }
-
     if(lzOrdenActual === 'tendencia'){
       lista.sort((a, b) => (b.raised > a.raised ? 1 : (b.raised < a.raised ? -1 : 0)));
     }else if(lzOrdenActual === 'graduados'){
       lista = lista.filter(t => t.graduado);
     }
     if(!lista.length){
-      el.innerHTML = q
-        ? '<div class="empty-state">No se encontró ningún token con "' + esc(buscarEl.value.trim()) + '"</div>'
-        : '<div class="empty-state">Nada para mostrar en este orden</div>';
+      el.innerHTML = '<div class="empty-state">Nada para mostrar en este orden</div>';
       return;
     }
 
@@ -7476,8 +7090,7 @@
 
     document.getElementById('hojaChipsCompra').innerHTML =
       [0.5, 1, 3, 5, 10, 25].map(v =>
-        '<button onclick="lzPonerMonto(\'compra\',' + v + ')">' + v + ' WLD</button>').join('')
-      + '<button onclick="lzMax(\'compra\')">MAX</button>';
+        '<button onclick="lzPonerMonto(\'compra\',' + v + ')">' + v + ' WLD</button>').join('');
     document.getElementById('hojaChipsVenta').innerHTML =
       [25, 50, 75, 100].map(v =>
         '<button onclick="lzPonerPorcentaje(' + v + ')">' + v + '%</button>').join('');
@@ -9106,6 +8719,704 @@
   };
 
   document.getElementById('btnConnect').onclick = connectWallet;
+  // ============================================================
+  //  GANAR — Guardar (Morpho) y Liquidez (pools de Uniswap V3)
+  //  Todo va directo desde la wallet del usuario a Morpho / Uniswap:
+  //  BUZZ WALLET no guarda fondos. Hay que dar de alta en Contract
+  //  Entrypoints las dos bóvedas, el gestor de posiciones y los tokens.
+  // ============================================================
+  const GN_NPM = '0xec12a9F9a09f50550686363766Cc153D03c27b5e'.toLowerCase(); // gestor oficial de posiciones Uniswap V3 (World Chain)
+  const GN_VAULTS = [
+    { id:'wld',  vault:'0x348831b46876d3dF2Db98BdEc5E3B4083329Ab9f'.toLowerCase() }, // Re7 WLD
+    { id:'usdc', vault:'0xb1E80387EbE53Ff75a89736097D34dC8D9E9045B'.toLowerCase() }  // Re7 USDC
+  ];
+  // pools de Uniswap V3 con dinero real (verificados); cada uno se vuelve a
+  // comprobar contra la factory oficial antes de mostrarse
+  const GN_POOLS = [
+    '0xC19BC89ac024426F5A23c5bb8bc91D8017c90684', // WLD/USDC 0,3%
+    '0x610E319b3A3Ab56A0eD5562927D37c233774ba39', // WLD/USDC 1%
+    '0x5f835420502A7702de50Cd0E78D8aA3608b2137e', // WETH/USDC 0,05%
+    '0xdCe053d9ba0Fa2c5f772416b64F191158Cbcc32E', // WBTC/USDC 0,05%
+    '0x494D68e3cAb640fa50F4c1B3E2499698D1a173A0'  // WLD/WETH 0,3%
+  ].map(a => a.toLowerCase());
+
+  const GN_VAULT_ABI = [
+    'function asset() view returns (address)',
+    'function balanceOf(address) view returns (uint256)',
+    'function convertToAssets(uint256 shares) view returns (uint256)',
+    'function maxWithdraw(address owner) view returns (uint256)',
+    'function deposit(uint256 assets, address receiver) returns (uint256)',
+    'function withdraw(uint256 assets, address receiver, address owner) returns (uint256)',
+    'function redeem(uint256 shares, address receiver, address owner) returns (uint256)'
+  ];
+  const GN_NPM_ABI = [
+    'function balanceOf(address owner) view returns (uint256)',
+    'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
+    'function positions(uint256 tokenId) view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)',
+    'function mint((address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint256 amount0Desired, uint256 amount1Desired, uint256 amount0Min, uint256 amount1Min, address recipient, uint256 deadline) params) payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)',
+    'function decreaseLiquidity((uint256 tokenId, uint128 liquidity, uint256 amount0Min, uint256 amount1Min, uint256 deadline) params) payable returns (uint256 amount0, uint256 amount1)',
+    'function collect((uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max) params) payable returns (uint256 amount0, uint256 amount1)'
+  ];
+  const GN_POOL_ABI = [
+    'function token0() view returns (address)',
+    'function token1() view returns (address)',
+    'function fee() view returns (uint24)',
+    'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)'
+  ];
+  const GN_FACTORY_ABI = ['function getPool(address, address, uint24) view returns (address)'];
+  const GN_MAX128 = (1n << 128n) - 1n;
+
+  // ---------- utilidades ----------
+  const gnTokCache = {};
+  async function gnTok(addr){
+    const k = addr.toLowerCase();
+    if(gnTokCache[k]) return gnTokCache[k];
+    const p = await getReadProvider();
+    const c = new ethers.Contract(k, ERC20_ABI, p);
+    let sym = '?', dec = 18;
+    try{ sym = await c.symbol(); }catch(e){}
+    try{ dec = Number(await c.decimals()); }catch(e){}
+    gnTokCache[k] = { address: k, sym, dec };
+    return gnTokCache[k];
+  }
+  function gnFmt(v, dec, dp){
+    const s = ethers.formatUnits(v, dec);
+    const partes = s.split('.');
+    const f = (partes[1] || '').slice(0, dp).replace(/0+$/, '');
+    const r = f ? partes[0] + '.' + f : partes[0];
+    if(v > 0n && /^0(\.0*)?$/.test(r)) return '<0.0001';
+    return r;
+  }
+  function gnFmtFloat(raw, dec){
+    const v = raw / Math.pow(10, dec);
+    if(!isFinite(v) || v <= 0) return '0';
+    if(v < 0.0001) return '<0.0001';
+    return v.toFixed(v >= 100 ? 2 : 4).replace(/\.?0+$/, '');
+  }
+  function gnParse(str, dec){
+    let s = (str || '').trim().replace(',', '.');
+    if(!s || isNaN(Number(s))) return 0n;
+    if(s.startsWith('.')) s = '0' + s;
+    try{ return ethers.parseUnits(truncateDecimals(s, dec), dec); }catch(e){ return 0n; }
+  }
+  function gnFeeTxt(fee){ return (fee / 10000).toString().replace('.', ',') + '%'; }
+  function gnSpacing(fee){ return ({100:1, 500:10, 3000:60, 10000:200})[fee] || 60; }
+  async function gnEnviar(transactions){
+    const k = getMiniKit();
+    if(!k) throw new Error('MiniKit no disponible');
+    const res = await k.sendTransaction({ chainId: CHAIN_ID, transactions });
+    const ok = (res && res.data && res.data.status === 'success')
+            || (res && res.finalPayload && res.finalPayload.status !== 'error');
+    let motivo = '';
+    if(!ok){
+      const fp = (res && (res.finalPayload || res.data)) || {};
+      motivo = fp.error_code || fp.message || (fp.details && JSON.stringify(fp.details)) || '';
+    }
+    return { ok, motivo };
+  }
+  let gnOcupado = false;
+
+  // ---------- navegación interna ----------
+  let gnTabActual = 'guardar';
+  function initGanar(){
+    if(gnTabActual === 'liquidez') cargarLiquidez(); else cargarGuardar();
+  }
+  function gnSeg(t){
+    gnTabActual = t;
+    document.getElementById('gnSegG').classList.toggle('active', t === 'guardar');
+    document.getElementById('gnSegL').classList.toggle('active', t === 'liquidez');
+    document.getElementById('gnPaneG').style.display = (t === 'guardar') ? '' : 'none';
+    document.getElementById('gnPaneL').style.display = (t === 'liquidez') ? '' : 'none';
+    initGanar();
+  }
+  function gnRefrescar(){ initGanar(); }
+
+  // ============================================================
+  //  GUARDAR (Morpho — bóvedas ERC-4626)
+  // ============================================================
+  let gnVaultData = [];
+  async function gnApy(vault){
+    try{
+      const q = '{ vaultByAddress(address:"' + vault + '", chainId:' + CHAIN_ID + '){ state{ netApy } } }';
+      const r = await fetch('https://blue-api.morpho.org/graphql', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ query:q })
+      });
+      const j = await r.json();
+      const v = j && j.data && j.data.vaultByAddress && j.data.vaultByAddress.state && j.data.vaultByAddress.state.netApy;
+      return (typeof v === 'number') ? v * 100 : null;
+    }catch(e){ return null; }
+  }
+
+  async function cargarGuardar(){
+    const box = document.getElementById('gnVaultList');
+    if(!userAddress){ box.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
+    if(!gnVaultData.length) box.innerHTML = '<div class="empty-state">Cargando…</div>';
+    try{
+      await initEthers();
+      const p = await getReadProvider();
+      const datos = await Promise.all(GN_VAULTS.map(async (v) => {
+        const c = new ethers.Contract(v.vault, GN_VAULT_ABI, p);
+        const assetAddr = await c.asset();
+        const tok = await gnTok(assetAddr);
+        const erc = new ethers.Contract(tok.address, ERC20_ABI, p);
+        const res = await Promise.all([ c.balanceOf(userAddress), erc.balanceOf(userAddress) ]);
+        const shares = res[0], wallet = res[1];
+        let pos = 0n, maxW = 0n;
+        if(shares > 0n){
+          pos = await c.convertToAssets(shares);
+          try{ maxW = await c.maxWithdraw(userAddress); }catch(e){ maxW = pos; }
+        }
+        return { vault: v.vault, tok, shares, pos, maxW, wallet, apy: null };
+      }));
+      gnVaultData = datos;
+      renderGuardar();
+      datos.forEach(async (d, i) => {
+        const a = await gnApy(d.vault);
+        if(gnVaultData[i] && gnVaultData[i].vault === d.vault){ gnVaultData[i].apy = a; renderGuardar(); }
+      });
+    }catch(e){
+      box.innerHTML = '<div class="empty-state">No se pudo leer Guardar. Probá ↻ en un momento.</div>';
+    }
+  }
+
+  function renderGuardar(){
+    const box = document.getElementById('gnVaultList');
+    box.innerHTML = gnVaultData.map((d, i) => `
+      <div class="card">
+        <div class="gn-row">
+          <div><div class="gn-name">${d.tok.sym}</div><div class="gn-sub">Morpho · bóveda Re7</div></div>
+          <div class="gn-apy">${d.apy == null ? '—' : d.apy.toFixed(2) + '% APY'}</div>
+        </div>
+        <div class="gn-stats">
+          <div class="gn-stat"><div class="l">En Guardar</div><div class="v">${gnFmt(d.pos, d.tok.dec, 4)} ${d.tok.sym}</div></div>
+          <div class="gn-stat"><div class="l">En tu wallet</div><div class="v">${gnFmt(d.wallet, d.tok.dec, 4)} ${d.tok.sym}</div></div>
+        </div>
+        <div class="gn-btns">
+          <button class="btn" onclick="gnAbrir(${i},'dep')">Depositar</button>
+          <button class="btn secondary" onclick="gnAbrir(${i},'ret')" ${d.shares > 0n ? '' : 'disabled'}>Retirar</button>
+        </div>
+      </div>`).join('');
+  }
+
+  let gnSel = { i:0, modo:'dep', max:false };
+  function gnAbrir(i, modo){
+    gnSel = { i, modo, max:false };
+    document.getElementById('gnAmt').value = '';
+    document.getElementById('gnMsg').textContent = '';
+    gnSetModo(modo);
+    openModal('gnModal');
+  }
+  function gnSetModo(modo){
+    const d = gnVaultData[gnSel.i]; if(!d) return;
+    gnSel.modo = modo; gnSel.max = false;
+    document.getElementById('gnAmt').value = '';
+    document.getElementById('gnMsg').textContent = '';
+    document.getElementById('gnTitle').textContent = (modo === 'dep' ? 'Guardar ' : 'Retirar ') + d.tok.sym;
+    document.getElementById('gnModDep').classList.toggle('active', modo === 'dep');
+    document.getElementById('gnModRet').classList.toggle('active', modo === 'ret');
+    document.getElementById('gnAvail').textContent = (modo === 'dep'
+      ? 'Disponible: ' + gnFmt(d.wallet, d.tok.dec, 6)
+      : 'Podés retirar: ' + gnFmt(d.maxW, d.tok.dec, 6)) + ' ' + d.tok.sym;
+    document.getElementById('gnBtn').textContent = (modo === 'dep' ? 'Depositar' : 'Retirar');
+  }
+  function gnPct(p){
+    const d = gnVaultData[gnSel.i]; if(!d) return;
+    const base = gnSel.modo === 'dep' ? d.wallet : d.maxW;
+    gnSel.max = (p === 100);
+    document.getElementById('gnAmt').value = ethers.formatUnits(base * BigInt(p) / 100n, d.tok.dec);
+  }
+  function gnAmtEdit(){ gnSel.max = false; }
+
+  async function gnConfirmar(){
+    if(gnOcupado) return;
+    const d = gnVaultData[gnSel.i]; if(!d) return;
+    const msg = document.getElementById('gnMsg'), btn = document.getElementById('gnBtn');
+    if(!userAddress){ msg.textContent = 'Esperá a que cargue tu cuenta.'; return; }
+    let amt = gnParse(document.getElementById('gnAmt').value, d.tok.dec);
+    if(amt <= 0n){ msg.textContent = 'Ingresá un monto.'; return; }
+    const vIface = new ethers.Interface(GN_VAULT_ABI);
+    const eIface = new ethers.Interface(ERC20_ABI);
+    let txs;
+    if(gnSel.modo === 'dep'){
+      if(amt > d.wallet){ msg.textContent = 'No tenés tanto saldo.'; return; }
+      txs = [
+        { to: d.tok.address, data: eIface.encodeFunctionData('approve', [d.vault, amt]) },
+        { to: d.vault, data: vIface.encodeFunctionData('deposit', [amt, userAddress]) }
+      ];
+    }else{
+      if(amt > d.maxW) amt = d.maxW;
+      if(amt <= 0n){ msg.textContent = 'No hay nada para retirar.'; return; }
+      const todo = gnSel.max && (d.maxW * 1000n >= d.pos * 999n);
+      txs = [ todo
+        ? { to: d.vault, data: vIface.encodeFunctionData('redeem', [d.shares, userAddress, userAddress]) }
+        : { to: d.vault, data: vIface.encodeFunctionData('withdraw', [amt, userAddress, userAddress]) } ];
+    }
+    gnOcupado = true; btn.disabled = true;
+    msg.textContent = 'Firmá en World App…';
+    try{
+      const r = await gnEnviar(txs);
+      if(r.ok){
+        msg.textContent = '✅ Listo.';
+        showToast(gnSel.modo === 'dep' ? 'Depositado en Guardar' : 'Retiro enviado');
+        setTimeout(() => { closeModal('gnModal'); cargarGuardar(); loadBalances(); }, 1300);
+      }else{
+        msg.textContent = 'No se completó.' + (r.motivo ? ' (' + r.motivo + ')' : '') + ' Revisá el monto e intentá de nuevo.';
+      }
+    }catch(e){
+      msg.textContent = (e && e.message) ? e.message : 'Falló el envío';
+    }finally{
+      gnOcupado = false; btn.disabled = false;
+    }
+  }
+
+  // ============================================================
+  //  LIQUIDEZ (Uniswap V3 — rango completo)
+  // ============================================================
+  let gnPools = [], gnPos = [];
+
+  async function cargarLiquidez(){
+    const poolBox = document.getElementById('gnPoolList');
+    const posBox = document.getElementById('gnPosList');
+    if(!userAddress){ posBox.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
+    try{
+      await initEthers();
+      const p = await getReadProvider();
+      if(!gnPools.length) poolBox.innerHTML = '<div class="empty-state">Cargando…</div>';
+      const fac = new ethers.Contract(UNISWAP_V3_FACTORY, GN_FACTORY_ABI, p);
+      const lista = await Promise.all(GN_POOLS.map(async (addr) => {
+        try{
+          const c = new ethers.Contract(addr, GN_POOL_ABI, p);
+          const r = await Promise.all([ c.token0(), c.token1(), c.fee(), c.slot0() ]);
+          const real = await fac.getPool(r[0], r[1], r[2]);
+          if(real.toLowerCase() !== addr) return null;     // no es el pool oficial: se descarta
+          const k = await Promise.all([ gnTok(r[0]), gnTok(r[1]) ]);
+          return { addr, t0:k[0], t1:k[1], fee:Number(r[2]), sqrtP:r[3][0] };
+        }catch(e){ return null; }
+      }));
+      gnPools = lista.filter(Boolean);
+      renderPools();
+    }catch(e){
+      poolBox.innerHTML = '<div class="empty-state">No se pudieron leer los pools. Probá ↻.</div>';
+    }
+    try{ await cargarPosiciones(); }
+    catch(e){ posBox.innerHTML = '<div class="empty-state">No se pudieron leer tus posiciones. Probá ↻.</div>'; }
+  }
+
+  function renderPools(){
+    const box = document.getElementById('gnPoolList');
+    if(!gnPools.length){ box.innerHTML = '<div class="empty-state">No hay pools disponibles ahora.</div>'; return; }
+    box.innerHTML = gnPools.map((pl, i) => `
+      <div class="card">
+        <div class="gn-row">
+          <div><div class="gn-name">${pl.t0.sym} / ${pl.t1.sym}</div><div class="gn-sub">Comisión del pool ${gnFeeTxt(pl.fee)}</div></div>
+          <span class="gn-badge">✓ Verificado</span>
+        </div>
+        <button class="btn" style="margin-top:12px; padding:12px; font-size:13.5px;" onclick="gnLiqAbrir(${i})">Agregar liquidez</button>
+      </div>`).join('');
+  }
+
+  // cantidades de una posición (solo para mostrar): matemática de Uniswap V3 en decimales
+  function gnAmountsPos(liq, tickL, tickU, sqrtPX96){
+    const sp = Number(sqrtPX96) / Math.pow(2, 96);
+    const sa = Math.pow(1.0001, tickL / 2), sb = Math.pow(1.0001, tickU / 2);
+    const l = Number(liq);
+    if(sp <= sa) return [ l * (1 / sa - 1 / sb), 0 ];
+    if(sp >= sb) return [ 0, l * (sb - sa) ];
+    return [ l * (1 / sp - 1 / sb), l * (sp - sa) ];
+  }
+
+  async function cargarPosiciones(){
+    const box = document.getElementById('gnPosList');
+    const p = await getReadProvider();
+    const npm = new ethers.Contract(GN_NPM, GN_NPM_ABI, p);
+    const fac = new ethers.Contract(UNISWAP_V3_FACTORY, GN_FACTORY_ABI, p);
+    const n = Number(await npm.balanceOf(userAddress));
+    const ids = [];
+    for(let i = 0; i < Math.min(n, 25); i++){ ids.push(await npm.tokenOfOwnerByIndex(userAddress, i)); }
+    const lista = await Promise.all(ids.map(async (id) => {
+      try{
+        const ps = await npm.positions(id);
+        const liq = ps[7];
+        let owed0 = ps[10], owed1 = ps[11];
+        if(liq > 0n){
+          try{   // simulación: da las comisiones reales acumuladas, sin gastar nada
+            const r = await npm.collect.staticCall(
+              { tokenId:id, recipient:userAddress, amount0Max:GN_MAX128, amount1Max:GN_MAX128 },
+              { from:userAddress });
+            owed0 = r[0]; owed1 = r[1];
+          }catch(e){}
+        }
+        if(liq === 0n && owed0 === 0n && owed1 === 0n) return null;
+        const k = await Promise.all([ gnTok(ps[2]), gnTok(ps[3]) ]);
+        let a = [0, 0];
+        try{
+          const poolAddr = await fac.getPool(ps[2], ps[3], ps[4]);
+          const s0 = await new ethers.Contract(poolAddr, GN_POOL_ABI, p).slot0();
+          a = gnAmountsPos(liq, Number(ps[5]), Number(ps[6]), s0[0]);
+        }catch(e){}
+        return { id, t0:k[0], t1:k[1], fee:Number(ps[4]), liq, a0:a[0], a1:a[1], owed0, owed1 };
+      }catch(e){ return null; }
+    }));
+    gnPos = lista.filter(Boolean);
+    if(!gnPos.length){
+      box.innerHTML = '<div class="empty-state" style="padding:22px 16px;">Todavía no tenés posiciones. Elegí un pool y agregá liquidez.</div>';
+      return;
+    }
+    box.innerHTML = gnPos.map((x, i) => `
+      <div class="card">
+        <div class="gn-row">
+          <div><div class="gn-name">${x.t0.sym} / ${x.t1.sym}</div><div class="gn-sub">Pool ${gnFeeTxt(x.fee)} · posición #${x.id.toString()}</div></div>
+        </div>
+        <div class="gn-stats">
+          <div class="gn-stat"><div class="l">Tenés en el pool</div><div class="v">${gnFmtFloat(x.a0, x.t0.dec)} ${x.t0.sym}<br>${gnFmtFloat(x.a1, x.t1.dec)} ${x.t1.sym}</div></div>
+          <div class="gn-stat"><div class="l">Por cobrar</div><div class="v">${gnFmt(x.owed0, x.t0.dec, 6)} ${x.t0.sym}<br>${gnFmt(x.owed1, x.t1.dec, 6)} ${x.t1.sym}</div></div>
+        </div>
+        <div class="gn-btns">
+          <button class="btn secondary" onclick="gnCobrar(${i})" ${(x.owed0 > 0n || x.owed1 > 0n) ? '' : 'disabled'}>Cobrar</button>
+          <button class="btn" onclick="gnRetAbrir(${i})" ${x.liq > 0n ? '' : 'disabled'}>Retirar</button>
+        </div>
+      </div>`).join('');
+  }
+
+  // ---------- agregar liquidez ----------
+  let gnLiq = { pool:null, bal0:0n, bal1:0n };
+  async function gnLiqAbrir(idx){
+    const pl = gnPools[idx]; if(!pl) return;
+    gnLiq = { pool:pl, bal0:0n, bal1:0n };
+    document.getElementById('gnLiqA0').value = '';
+    document.getElementById('gnLiqA1').value = '';
+    document.getElementById('gnLiqMsg').textContent = '';
+    document.getElementById('gnLiqTitle').textContent = pl.t0.sym + ' / ' + pl.t1.sym + ' · ' + gnFeeTxt(pl.fee);
+    document.getElementById('gnLiqL0').textContent = pl.t0.sym + ' · saldo: …';
+    document.getElementById('gnLiqL1').textContent = pl.t1.sym + ' · saldo: …';
+    openModal('gnLiqModal');
+    try{
+      const p = await getReadProvider();
+      const c0 = new ethers.Contract(pl.t0.address, ERC20_ABI, p);
+      const c1 = new ethers.Contract(pl.t1.address, ERC20_ABI, p);
+      const r = await Promise.all([ c0.balanceOf(userAddress), c1.balanceOf(userAddress),
+                                    new ethers.Contract(pl.addr, GN_POOL_ABI, p).slot0() ]);
+      gnLiq.bal0 = r[0]; gnLiq.bal1 = r[1]; pl.sqrtP = r[2][0];
+      document.getElementById('gnLiqL0').textContent = pl.t0.sym + ' · saldo: ' + gnFmt(r[0], pl.t0.dec, 6);
+      document.getElementById('gnLiqL1').textContent = pl.t1.sym + ' · saldo: ' + gnFmt(r[1], pl.t1.dec, 6);
+    }catch(e){
+      document.getElementById('gnLiqMsg').textContent = 'No se pudo leer tu saldo. Cerrá y volvé a abrir.';
+    }
+  }
+  // en rango completo la proporción entre los dos tokens es el precio actual del pool
+  function gnLiqEdit(lado){
+    const pl = gnLiq.pool; if(!pl || !pl.sqrtP) return;
+    const q = 1n << 192n, sp2 = pl.sqrtP * pl.sqrtP;
+    if(lado === 0){
+      const a0 = gnParse(document.getElementById('gnLiqA0').value, pl.t0.dec);
+      document.getElementById('gnLiqA1').value = a0 > 0n ? ethers.formatUnits(a0 * sp2 / q, pl.t1.dec) : '';
+    }else{
+      const a1 = gnParse(document.getElementById('gnLiqA1').value, pl.t1.dec);
+      document.getElementById('gnLiqA0').value = (a1 > 0n && sp2 > 0n) ? ethers.formatUnits(a1 * q / sp2, pl.t0.dec) : '';
+    }
+  }
+  function gnLiqPct(pc){
+    const pl = gnLiq.pool; if(!pl || !pl.sqrtP) return;
+    const q = 1n << 192n, sp2 = pl.sqrtP * pl.sqrtP;
+    const max0 = (() => { const por1 = gnLiq.bal1 * q / sp2; return gnLiq.bal0 < por1 ? gnLiq.bal0 : por1; })();
+    const a0 = max0 * BigInt(pc) / 100n;
+    document.getElementById('gnLiqA0').value = ethers.formatUnits(a0, pl.t0.dec);
+    gnLiqEdit(0);
+  }
+  async function gnLiqConfirmar(){
+    if(gnOcupado) return;
+    const pl = gnLiq.pool; if(!pl) return;
+    const msg = document.getElementById('gnLiqMsg'), btn = document.getElementById('gnLiqBtn');
+    if(!userAddress){ msg.textContent = 'Esperá a que cargue tu cuenta.'; return; }
+    const a0 = gnParse(document.getElementById('gnLiqA0').value, pl.t0.dec);
+    const a1 = gnParse(document.getElementById('gnLiqA1').value, pl.t1.dec);
+    if(a0 <= 0n || a1 <= 0n){ msg.textContent = 'Ingresá un monto.'; return; }
+    if(a0 > gnLiq.bal0 || a1 > gnLiq.bal1){ msg.textContent = 'No tenés saldo suficiente de los dos tokens.'; return; }
+    const lim = Math.floor(887272 / gnSpacing(pl.fee)) * gnSpacing(pl.fee);
+    const eIface = new ethers.Interface(ERC20_ABI);
+    const nIface = new ethers.Interface(GN_NPM_ABI);
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    const txs = [
+      { to: pl.t0.address, data: eIface.encodeFunctionData('approve', [GN_NPM, a0]) },
+      { to: pl.t1.address, data: eIface.encodeFunctionData('approve', [GN_NPM, a1]) },
+      { to: GN_NPM, data: nIface.encodeFunctionData('mint', [{
+          token0: pl.t0.address, token1: pl.t1.address, fee: pl.fee,
+          tickLower: -lim, tickUpper: lim,
+          amount0Desired: a0, amount1Desired: a1,
+          amount0Min: a0 * 95n / 100n, amount1Min: a1 * 95n / 100n,
+          recipient: userAddress, deadline
+      }]) }
+    ];
+    gnOcupado = true; btn.disabled = true;
+    msg.textContent = 'Firmá en World App…';
+    try{
+      const r = await gnEnviar(txs);
+      if(r.ok){
+        msg.textContent = '✅ Liquidez agregada.';
+        showToast('Liquidez agregada');
+        setTimeout(() => { closeModal('gnLiqModal'); cargarLiquidez(); loadBalances(); }, 1300);
+      }else{
+        msg.textContent = 'No se completó.' + (r.motivo ? ' (' + r.motivo + ')' : '') + ' Puede que el precio se haya movido: probá de nuevo.';
+      }
+    }catch(e){
+      msg.textContent = (e && e.message) ? e.message : 'Falló el envío';
+    }finally{
+      gnOcupado = false; btn.disabled = false;
+    }
+  }
+
+  // ---------- cobrar y retirar ----------
+  async function gnCobrar(i){
+    const x = gnPos[i]; if(!x || gnOcupado) return;
+    gnOcupado = true;
+    try{
+      const nIface = new ethers.Interface(GN_NPM_ABI);
+      const r = await gnEnviar([{ to: GN_NPM, data: nIface.encodeFunctionData('collect', [{
+        tokenId: x.id, recipient: userAddress, amount0Max: GN_MAX128, amount1Max: GN_MAX128 }]) }]);
+      if(r.ok){ showToast('Comisiones cobradas'); setTimeout(() => { cargarLiquidez(); loadBalances(); }, 1300); }
+      else showToast('No se pudo cobrar. Intentá de nuevo.', true);
+    }catch(e){ showToast((e && e.message) || 'Falló el cobro', true); }
+    finally{ gnOcupado = false; }
+  }
+  let gnRet = { pos:null, pct:100 };
+  function gnRetAbrir(i){
+    const x = gnPos[i]; if(!x) return;
+    gnRet = { pos:x, pct:100 };
+    document.getElementById('gnRetTitle').textContent = 'Retirar ' + x.t0.sym + ' / ' + x.t1.sym;
+    document.getElementById('gnRetMsg').textContent = '';
+    gnRetPct(100);
+    openModal('gnRetModal');
+  }
+  function gnRetPct(pc){
+    gnRet.pct = pc;
+    document.querySelectorAll('#gnRetPcts button').forEach(b => b.classList.toggle('active', b.textContent === pc + '%'));
+  }
+  async function gnRetConfirmar(){
+    if(gnOcupado) return;
+    const x = gnRet.pos; if(!x) return;
+    const msg = document.getElementById('gnRetMsg'), btn = document.getElementById('gnRetBtn');
+    const liq = x.liq * BigInt(gnRet.pct) / 100n;
+    const nIface = new ethers.Interface(GN_NPM_ABI);
+    const deadline = Math.floor(Date.now() / 1000) + 1200;
+    const txs = [];
+    if(liq > 0n) txs.push({ to: GN_NPM, data: nIface.encodeFunctionData('decreaseLiquidity', [{
+      tokenId: x.id, liquidity: liq, amount0Min: 0n, amount1Min: 0n, deadline }]) });
+    txs.push({ to: GN_NPM, data: nIface.encodeFunctionData('collect', [{
+      tokenId: x.id, recipient: userAddress, amount0Max: GN_MAX128, amount1Max: GN_MAX128 }]) });
+    gnOcupado = true; btn.disabled = true;
+    msg.textContent = 'Firmá en World App…';
+    try{
+      const r = await gnEnviar(txs);
+      if(r.ok){
+        msg.textContent = '✅ Retiro enviado a tu wallet.';
+        showToast('Liquidez retirada');
+        setTimeout(() => { closeModal('gnRetModal'); cargarLiquidez(); loadBalances(); }, 1300);
+      }else{
+        msg.textContent = 'No se completó.' + (r.motivo ? ' (' + r.motivo + ')' : '') + ' Intentá de nuevo.';
+      }
+    }catch(e){
+      msg.textContent = (e && e.message) ? e.message : 'Falló el envío';
+    }finally{
+      gnOcupado = false; btn.disabled = false;
+    }
+  }
+
+  // ============================================================
+  //  PRECIO DE RESPALDO — calculado desde los pools reales contra WLD
+  //  Se usa cuando DexScreener no conoce el token (o se cae / corta por
+  //  exceso de pedidos). Mira Uniswap V3 (4 comisiones), Uniswap V2 (Puf)
+  //  y World Swap, ignora pools con menos de 5 WLD y se queda con el que
+  //  tiene más WLD adentro. Lo calculado se guarda en el teléfono.
+  // ============================================================
+  const PX_MIN_WLD = 5;
+  const PX_V3_FEES = [100, 500, 3000, 10000];
+  const PX_CACHE_KEY = 'buzz_px_resp';
+  let pxMem = null;
+  function pxLeer(){
+    if(pxMem) return pxMem;
+    try{ pxMem = JSON.parse(localStorage.getItem(PX_CACHE_KEY) || '{}') || {}; }catch(e){ pxMem = {}; }
+    return pxMem;
+  }
+  function pxGuardar(){
+    try{ localStorage.setItem(PX_CACHE_KEY, JSON.stringify(pxMem || {})); }catch(e){}
+  }
+
+  // precio de 1 token entero medido en WLD, desde los pools reales
+  async function precioEnWldDesdePools(addr, dec){
+    const a = addr.toLowerCase();
+    const memo = pxLeer()[a];
+    // un precio hallado vale 30 min; un "no encontré" solo 10 (puede que el pool aparezca)
+    if(memo && (Date.now() - memo.t) < (memo.v == null ? 10 : 30) * 60 * 1000) return memo.v;
+
+    let mejor = null;
+    try{
+      const p = await getReadProvider();
+      const wld = WLD_ADDRESS.toLowerCase();
+      const wldC = new ethers.Contract(wld, ERC20_ABI, p);
+      const minWei = ethers.parseUnits(String(PX_MIN_WLD), 18);
+      const cands = [];
+
+      // Uniswap V3
+      const fac = new ethers.Contract(UNISWAP_V3_FACTORY,
+        ['function getPool(address,address,uint24) view returns (address)'], p);
+      const pools = await Promise.all(PX_V3_FEES.map(f => fac.getPool(a, wld, f).catch(() => ethers.ZeroAddress)));
+      const v3 = pools.map(async (pool) => {
+        if(!pool || pool === ethers.ZeroAddress) return;
+        try{
+          const bal = await wldC.balanceOf(pool);
+          if(bal < minWei) return;
+          const pc = new ethers.Contract(pool, [
+            'function token0() view returns (address)',
+            'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 i, uint16 c, uint16 n, uint8 f, bool u)'
+          ], p);
+          const r = await Promise.all([ pc.token0(), pc.slot0() ]);
+          const x = Number(r[1][0]) / Math.pow(2, 96);
+          const praw = x * x;                      // token1 crudo por cada token0 crudo
+          if(!(praw > 0) || !isFinite(praw)) return;
+          const wldPorToken = (r[0].toLowerCase() === a)
+            ? praw * Math.pow(10, dec) / 1e18
+            : Math.pow(10, dec) / (praw * 1e18);
+          cands.push({ liq: bal, precio: wldPorToken });
+        }catch(e){}
+      });
+
+      // Uniswap V2 (Puf) y World Swap
+      const v2 = [V2_ROUTER_REAL, WORLDSWAP_ROUTER].map(async (rt) => {
+        try{
+          const router = new ethers.Contract(rt, ['function factory() view returns (address)'], p);
+          const f2 = new ethers.Contract(await router.factory(),
+            ['function getPair(address,address) view returns (address)'], p);
+          const pair = await f2.getPair(a, wld);
+          if(!pair || pair === ethers.ZeroAddress) return;
+          const pc = new ethers.Contract(pair, [
+            'function token0() view returns (address)',
+            'function getReserves() view returns (uint112, uint112, uint32)'
+          ], p);
+          const r = await Promise.all([ pc.token0(), pc.getReserves() ]);
+          const esToken0 = r[0].toLowerCase() === a;
+          const rTok = esToken0 ? r[1][0] : r[1][1];
+          const rWld = esToken0 ? r[1][1] : r[1][0];
+          if(rWld < minWei || rTok === 0n) return;
+          cands.push({ liq: rWld, precio: (Number(rWld) / 1e18) / (Number(rTok) / Math.pow(10, dec)) });
+        }catch(e){}
+      });
+
+      await Promise.all(v3.concat(v2));
+      cands.sort((x, y) => (y.liq > x.liq) ? 1 : (y.liq < x.liq ? -1 : 0));
+      if(cands.length && isFinite(cands[0].precio) && cands[0].precio > 0) mejor = cands[0].precio;
+    }catch(e){ return null; }       // error de red: no se guarda, se reintenta luego
+
+    pxLeer()[a] = { v: mejor, t: Date.now() };
+    pxGuardar();
+    return mejor;
+  }
+
+  // WLD en dólares leído directo de los pools WLD/USDC, por si DexScreener falla
+  async function precioWldUsdOnchain(){
+    try{
+      const p = await getReadProvider();
+      const wld = WLD_ADDRESS.toLowerCase();
+      const wldC = new ethers.Contract(wld, ERC20_ABI, p);
+      let mejor = null, mejorLiq = 0n;
+      for(const pool of ['0xC19BC89ac024426F5A23c5bb8bc91D8017c90684', '0x610E319b3A3Ab56A0eD5562927D37c233774ba39']){
+        try{
+          const pa = pool.toLowerCase();
+          const pc = new ethers.Contract(pa, [
+            'function token0() view returns (address)',
+            'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 i, uint16 c, uint16 n, uint8 f, bool u)'
+          ], p);
+          const r = await Promise.all([ pc.token0(), pc.slot0(), wldC.balanceOf(pa) ]);
+          const x = Number(r[1][0]) / Math.pow(2, 96);
+          const praw = x * x;
+          if(!(praw > 0) || !isFinite(praw)) continue;
+          // USDC tiene 6 decimales, WLD 18
+          const usd = (r[0].toLowerCase() === wld) ? praw * 1e12 : 1e12 / praw;
+          if(isFinite(usd) && usd > 0 && usd < 100 && r[2] > mejorLiq){ mejor = usd; mejorLiq = r[2]; }
+        }catch(e){}
+      }
+      return mejor;
+    }catch(e){ return null; }
+  }
+
+  // precio de 1 token en dólares por el camino de respaldo
+  async function precioRespaldoUsd(addr, dec){
+    let usd = await precioWldUsd();
+    if(usd == null) usd = await precioWldUsdOnchain();
+    if(usd == null) return null;
+    if(addr.toLowerCase() === WLD_ADDRESS.toLowerCase()) return usd;
+    const enWld = await precioEnWldDesdePools(addr, dec);
+    return (enWld != null) ? enWld * usd : null;
+  }
+
+  // ============================================================
+  //  SESIÓN GUARDADA — la firma de conexión se pide UNA sola vez.
+  //  Después de la primera conexión, entrar y salir de la app lleva
+  //  directo a la wallet, sin volver a tocar el botón. "Desconectar"
+  //  (en Perfil) borra la sesión y vuelve a la pantalla de bienvenida.
+  // ============================================================
+  const SESION_KEY = 'buzz_session';
+  function guardarSesion(){
+    try{
+      localStorage.setItem(SESION_KEY, JSON.stringify({ address: userAddress, username: username || '', t: Date.now() }));
+    }catch(e){}
+  }
+  function leerSesion(){
+    try{
+      const s = JSON.parse(localStorage.getItem(SESION_KEY) || 'null');
+      return (s && /^0x[0-9a-fA-F]{40}$/.test(s.address || '')) ? s : null;
+    }catch(e){ return null; }
+  }
+  async function autoConectar(){
+    const s = leerSesion();
+    if(!s) return;
+    const statusEl = document.getElementById('connectStatus');
+    const btn = document.getElementById('btnConnect');
+    let tries = 0;
+    while(typeof window.__miniKitLoaded === 'undefined' && tries < 100){
+      await new Promise(r => setTimeout(r, 100));
+      tries++;
+    }
+    const k = window._MiniKit || window.MiniKit;
+    if(!k || !(k.isInstalled && k.isInstalled())){
+      // fuera de World App no se puede entrar solo: se vuelve a mostrar el botón
+      statusEl.textContent = 'Abrí BUZZ WALLET desde World App para conectar.';
+      btn.style.display = '';
+      return;
+    }
+    // la dirección que informa World App manda; la guardada es solo respaldo
+    userAddress = k.walletAddress || (k.user && k.user.walletAddress) || s.address;
+    username = (k.user && k.user.username) || s.username || '';
+    guardarSesion();
+    onWalletConnected();
+    if(!username && typeof k.getUserByAddress === 'function'){
+      k.getUserByAddress(userAddress).then(u => {
+        if(u && u.username){
+          username = u.username;
+          document.getElementById('userTag').textContent = '@' + username;
+          document.getElementById('profileUser').textContent = '@' + username;
+          guardarSesion();
+        }
+      }).catch(() => {});
+    }
+  }
+
+  // dos toques para evitar desconectar sin querer (sin usar confirm(), que
+  // en algunos visores de World App no aparece)
+  let desconectarArmado = false;
+  function desconectar(){
+    const b = document.getElementById('btnDesconectar');
+    if(!desconectarArmado){
+      desconectarArmado = true;
+      if(b) b.textContent = 'Tocá de nuevo para desconectar';
+      setTimeout(() => { desconectarArmado = false; if(b) b.textContent = 'Desconectar'; }, 4000);
+      return;
+    }
+    try{ localStorage.removeItem(SESION_KEY); }catch(e){}
+    location.reload();      // arranca limpio, sin datos de la cuenta anterior
+  }
+
+  autoConectar();
+
 </script>
 
 <script type="module">
@@ -9122,554 +9433,5 @@
     window.__miniKitLoaded = false;
   }
 </script>
-
-<script>
-// ===================== BUZZ WALLET · Motor de traducción =====================
-// Traduce el texto visible de la app (ES <-> EN <-> PT) sin tocar botones,
-// posiciones, estilos ni la lógica del resto de la aplicación.
-(function(){
-// ===================== BUZZ WALLET · i18n =====================
-// Diccionario de traducción ES -> EN / PT.
-// Traduce SOLO texto visible (por coincidencia exacta o parcial de frases).
-// No modifica estructura, botones, ids, ni lógica de la app.
-const BUZZ_I18N = {
-  en: {
-    // Header / navegación
-    "BUZZ": "BUZZ",
-    "Inicio": "Home",
-    "Swap": "Swap",
-    "Tendencias": "Trending",
-    "Launchpad": "Launchpad",
-    "Perfil": "Profile",
-    "Conectar billetera": "Connect wallet",
-
-    // Pantalla Inicio
-    "Balance total estimado": "Estimated total balance",
-    "Enviar": "Send",
-    "Recibir": "Receive",
-    "Pools de staking": "Staking pools",
-    "Lanzar un token": "Launch a token",
-    "Visitá BuzzFarm": "Visit BuzzFarm",
-    "Tus tokens": "Your tokens",
-    "Actualizar": "Refresh",
-    "+ Agregar": "+ Add",
-    "Cargando tokens…": "Loading tokens…",
-    "Anuncio": "Ad",
-
-    // Crear token
-    "Lanzar un token": "Launch a token",
-    "Leyendo la factory…": "Reading the factory…",
-    "Nombre": "Name",
-    "Símbolo": "Symbol",
-    "Logo": "Logo",
-    "sin": "no",
-    "logo": "logo",
-    "Elegir imagen": "Choose image",
-    "Se achica a 128 px para que entre en la cadena.": "It's shrunk to 128px so it fits on-chain.",
-    "Descripción": "Description",
-    "De qué se trata tu token": "What your token is about",
-    "Telegram (opcional)": "Telegram (optional)",
-    "X (opcional)": "X (optional)",
-    "Web (opcional)": "Website (optional)",
-    "Tu comisión como creador": "Your fee as creator",
-    "Se suma al 1% de plataforma. El comprador paga entre 1.25% y 2% en total.": "This is added to the 1% platform fee. The buyer pays between 1.25% and 2% total.",
-    "Compra inicial en WLD (opcional)": "Initial purchase in WLD (optional)",
-    "Hasta 1000 WLD. Con esto": "Up to 1000 WLD. With this",
-    "comprás tus propios tokens": "you buy your own tokens",
-    "al precio": "at the",
-    "de salida. Los WLD se gastan en la compra: lo que queda bloqueado son": "launch price. The WLD is spent on the purchase: what stays locked is",
-    "los tokens que recibís": "the tokens you receive",
-    ", y los reclamás cuando vence el plazo.": ", and you claim them once the term ends.",
-    "Plazo de bloqueo de tus tokens": "Lock period for your tokens",
-    "24 h": "24 h",
-    "7 d": "7 d",
-    "15 d": "15 d",
-    "1 mes": "1 month",
-    "3 meses": "3 months",
-    "Crear token": "Create token",
-
-    // Tokens lanzados / launchpad
-    "Esperando operaciones…": "Waiting for trades…",
-    "Top por Market Cap": "Top by Market Cap",
-    "en WLD": "in WLD",
-    "Cargando…": "Loading…",
-    "Todos los tokens": "All tokens",
-    "↻ Actualizar": "↻ Refresh",
-    "Tendencia": "Trending",
-    "Nuevos": "New",
-    "Graduados": "Graduated",
-
-    // Ficha de token
-    "Mercado": "Market",
-    "👑 Destacar": "👑 Feature",
-    "Historial de precio": "Price history",
-    "● en vivo": "● live",
-    "1H": "1H", "6H": "6H", "24H": "24H", "Todo": "All",
-    "Datos": "Data",
-    "Operaciones": "Trades",
-    "Poseedores": "Holders",
-    "Info": "Info",
-    "Comprar": "Buy",
-    "Vender": "Sell",
-    "Operaciones en vivo": "Live trades",
-    "Tocá cualquiera para abrir ese token y operarlo.": "Tap any of them to open and trade that token.",
-    "Escuchando operaciones…": "Listening for trades…",
-    "Destacar token": "Feature token",
-    "El token aparece arriba de todo en el Launchpad. El orden lo decide lo pagado: quien más invierte va primero. Se puede volver a comprar para acumular.": "The token appears at the very top of the Launchpad. Order is decided by how much is paid: whoever invests more goes first. You can buy again to add up.",
-    "Destacar": "Feature",
-
-    // Trade sheet
-    "Pagas": "You pay",
-    "Saldo: 0": "Balance: 0",
-    "Recibes (estimado)": "You receive (estimated)",
-    "Elegir ▾": "Choose ▾",
-    "Ingresá un monto": "Enter an amount",
-    "Comisión BUZZ: 0.50% · se convierte a $BUZZ y va a la tesorería": "BUZZ fee: 0.50% · converted to $BUZZ and sent to the treasury",
-    "En tendencia ahora · pares con WLD": "Trending now · WLD pairs",
-
-    // Publicitar
-    "Publicitar en BUZZ": "Advertise on BUZZ",
-    "Leyendo precios…": "Reading prices…",
-    "Paquete": "Package",
-    "24 horas": "24 hours",
-    "1 semana": "1 week",
-    "1 mes": "1 month",
-    "Se paga en $ZORP. El anuncio entra en la rotación del banner de Inicio hasta que vence.": "Paid in $ZORP. The ad enters the Home banner rotation until it expires.",
-    "Título": "Title",
-    "Nombre de tu proyecto": "Your project's name",
-    "Una línea corta": "A short line",
-    "Texto del botón": "Button text",
-    "Ver": "View",
-    "Logo (URL, opcional)": "Logo (URL, optional)",
-    "A dónde lleva": "Where it leads",
-    "Vista previa": "Preview",
-    "Publicar": "Publish",
-
-    // Tendencias
-    "Del Launchpad": "From the Launchpad",
-    "Ver todos →": "View all →",
-    "Tokens con par WLD en World Chain": "Tokens with a WLD pair on World Chain",
-    "por volumen y actividad de las últimas 24 h": "by volume and activity in the last 24 h",
-    "Cargando tokens en tendencia…": "Loading trending tokens…",
-
-    // Perfil
-    "Tu cuenta": "Your account",
-    "Tokens que agregaste": "Tokens you added",
-    "Podés cambiarles el logo y las redes las veces que quieras, sin volver a pagar.": "You can change their logo and social links as many times as you like, without paying again.",
-    "Pools esperando aprobación": "Pools awaiting approval",
-    "Al aprobar, los 5.000 BUZZ del creador se queman. Al rechazar, se le devuelve todo.": "On approval, the creator's 5,000 BUZZ is burned. On rejection, everything is returned.",
-    "Tokens que agregaron los usuarios": "Tokens added by users",
-    "Cada uno pagó 3 WLD. Para que se puedan operar tienen que estar también en Contract Entrypoints del Developer Portal.": "Each one paid 3 WLD. For them to be tradable they also need to be added to Contract Entrypoints in the Developer Portal.",
-    "Buscar": "Search",
-    "Copiar todas": "Copy all",
-    "Bloqueá tokens y ganá": "Lock tokens and earn",
-    "Bloqueás por el plazo del pool y ganás según su APY. Pasado el plazo retirás cuando quieras, y si lo dejás sigue generando.": "You lock for the pool's term and earn based on its APY. Once the term is over you can withdraw whenever you want, and if you leave it, it keeps earning.",
-    "Tocá ↻ para cargar": "Tap ↻ to load",
-    "➕ Abrir mi propio pool": "➕ Open my own pool",
-    "Pools que creaste": "Pools you created",
-    "Reclamo diario": "Daily claim",
-    "Reclamar": "Claim",
-    "Invitá y ganá": "Invite and earn",
-    "PARA VOS": "FOR YOU",
-    "PARA TU AMIGO": "FOR YOUR FRIEND",
-    "Copiá tu enlace y pasáselo a quien quieras. Cuando esa persona lo abra y conecte su wallet,": "Copy your link and share it with anyone. When that person opens it and connects their wallet,",
-    "el premio se acredita solo": "the reward is credited automatically",
-    ": no tiene que escribir tu nombre ni buscar nada.": ": they don't need to type your name or look anything up.",
-    "Se paga una vez por persona, la primera vez que entra.": "Paid once per person, the first time they enter.",
-    "📤 Copiar mi enlace": "📤 Copy my link",
-    "¿Alguien te invitó y no se registró solo? Poné su wallet acá y cobran los dos.": "Did someone invite you and it wasn't registered automatically? Enter their wallet here and you'll both get paid.",
-    "Confirmar invitador": "Confirm inviter",
-    "Misiones": "Missions",
-    "Historial": "History",
-    "Tus movimientos": "Your activity",
-
-    // Modales
-    "Elegí un token": "Choose a token",
-    "Nombre, símbolo o pegar la dirección": "Name, symbol, or paste the address",
-    "➕ Agregar un token": "➕ Add a token",
-    "Bloquear": "Lock",
-    "MAX": "MAX",
-    "Confirmar": "Confirm",
-    "Abrir un pool": "Open a pool",
-    "Depositás tu token como recompensa y elegís cuánto pagar por año.": "You deposit your token as the reward and choose how much to pay per year.",
-    "Cuesta": "It costs",
-    "5.000 BUZZ": "5,000 BUZZ",
-    ", que se queman al aprobarse.": ", which is burned upon approval.",
-    "Mínimo de recompensa:": "Minimum reward:",
-    "500.000": "500,000",
-    "del token.": "of the token.",
-    "Dirección del token": "Token address",
-    "Nombre del pool": "Pool name",
-    "Ej: Staking de MITOKEN": "E.g.: Staking for MYTOKEN",
-    "APY anual": "Annual APY",
-    "Días de bloqueo": "Lock days",
-    "Recompensa a depositar": "Reward to deposit",
-    "Solicitar pool": "Request pool",
-    "Agregar un token": "Add a token",
-    "Cualquiera puede sumar un token de World Chain a la lista de la app.": "Anyone can add a World Chain token to the app's list.",
-    "Cuesta 3 WLD y queda disponible para todos los usuarios.": "It costs 3 WLD and becomes available to all users.",
-    "Puede tardar unas horas en quedar operativo, porque hace falta una habilitación manual del lado de World App.": "It can take a few hours to become operational, since a manual approval is needed on World App's side.",
-    "Dirección del contrato": "Contract address",
-    "Logo (opcional)": "Logo (optional)",
-    "Agregar por 3 WLD": "Add for 3 WLD",
-    "Token": "Token",
-    "Dirección o usuario": "Address or username",
-    "Cantidad": "Amount",
-    "Tu dirección": "Your address",
-    "Copiar dirección": "Copy address",
-
-    // Ficha de token (modal)
-    "Actividad 24 h": "24h activity",
-    "Compras": "Buys",
-    "Ventas": "Sells",
-    "Tu saldo": "Your balance",
-    "Valor de tu saldo": "Value of your balance",
-    "Suministro total": "Total supply",
-    "Par principal": "Main pair",
-    "DEX": "DEX",
-    "Pool creado": "Pool created",
-    "📊 GeckoTerminal": "📊 GeckoTerminal",
-    "🙈 Ocultar de mi wallet": "🙈 Hide from my wallet",
-    "Precio": "Price",
-    "Precio en WLD": "Price in WLD",
-    "Capitalización (MC)": "Market cap (MC)",
-    "FDV": "FDV",
-    "Liquidez": "Liquidity",
-    "Volumen 24 h": "24h volume",
-    "Variación": "Change",
-  },
-
-  pt: {
-    "BUZZ": "BUZZ",
-    "Inicio": "Início",
-    "Swap": "Swap",
-    "Tendencias": "Tendências",
-    "Launchpad": "Launchpad",
-    "Perfil": "Perfil",
-    "Conectar billetera": "Conectar carteira",
-
-    "Balance total estimado": "Saldo total estimado",
-    "Enviar": "Enviar",
-    "Recibir": "Receber",
-    "Pools de staking": "Pools de staking",
-    "Lanzar un token": "Lançar um token",
-    "Visitá BuzzFarm": "Visite o BuzzFarm",
-    "Tus tokens": "Seus tokens",
-    "Actualizar": "Atualizar",
-    "+ Agregar": "+ Adicionar",
-    "Cargando tokens…": "Carregando tokens…",
-    "Anuncio": "Anúncio",
-
-    "Leyendo la factory…": "Lendo a factory…",
-    "Nombre": "Nome",
-    "Símbolo": "Símbolo",
-    "Logo": "Logo",
-    "sin": "sem",
-    "logo": "logo",
-    "Elegir imagen": "Escolher imagem",
-    "Se achica a 128 px para que entre en la cadena.": "É reduzida para 128px para caber na blockchain.",
-    "Descripción": "Descrição",
-    "De qué se trata tu token": "Do que se trata seu token",
-    "Telegram (opcional)": "Telegram (opcional)",
-    "X (opcional)": "X (opcional)",
-    "Web (opcional)": "Site (opcional)",
-    "Tu comisión como creador": "Sua taxa como criador",
-    "Se suma al 1% de plataforma. El comprador paga entre 1.25% y 2% en total.": "Isso se soma à taxa de 1% da plataforma. O comprador paga entre 1,25% e 2% no total.",
-    "Compra inicial en WLD (opcional)": "Compra inicial em WLD (opcional)",
-    "Hasta 1000 WLD. Con esto": "Até 1000 WLD. Com isso",
-    "comprás tus propios tokens": "você compra seus próprios tokens",
-    "al precio": "ao preço",
-    "de salida. Los WLD se gastan en la compra: lo que queda bloqueado son": "de lançamento. O WLD é gasto na compra: o que fica bloqueado são",
-    "los tokens que recibís": "os tokens que você recebe",
-    ", y los reclamás cuando vence el plazo.": ", e você os resgata quando o prazo vence.",
-    "Plazo de bloqueo de tus tokens": "Prazo de bloqueio dos seus tokens",
-    "24 h": "24 h",
-    "7 d": "7 d",
-    "15 d": "15 d",
-    "1 mes": "1 mês",
-    "3 meses": "3 meses",
-    "Crear token": "Criar token",
-
-    "Esperando operaciones…": "Aguardando operações…",
-    "Top por Market Cap": "Top por Market Cap",
-    "en WLD": "em WLD",
-    "Cargando…": "Carregando…",
-    "Todos los tokens": "Todos os tokens",
-    "↻ Actualizar": "↻ Atualizar",
-    "Tendencia": "Tendência",
-    "Nuevos": "Novos",
-    "Graduados": "Formados",
-
-    "Mercado": "Mercado",
-    "👑 Destacar": "👑 Destacar",
-    "Historial de precio": "Histórico de preço",
-    "● en vivo": "● ao vivo",
-    "1H": "1H", "6H": "6H", "24H": "24H", "Todo": "Tudo",
-    "Datos": "Dados",
-    "Operaciones": "Operações",
-    "Poseedores": "Detentores",
-    "Info": "Info",
-    "Comprar": "Comprar",
-    "Vender": "Vender",
-    "Operaciones en vivo": "Operações ao vivo",
-    "Tocá cualquiera para abrir ese token y operarlo.": "Toque em qualquer um para abrir esse token e negociá-lo.",
-    "Escuchando operaciones…": "Ouvindo operações…",
-    "Destacar token": "Destacar token",
-    "El token aparece arriba de todo en el Launchpad. El orden lo decide lo pagado: quien más invierte va primero. Se puede volver a comprar para acumular.": "O token aparece no topo do Launchpad. A ordem é decidida pelo valor pago: quem investe mais fica em primeiro. Você pode comprar novamente para acumular.",
-    "Destacar": "Destacar",
-
-    "Pagas": "Você paga",
-    "Saldo: 0": "Saldo: 0",
-    "Recibes (estimado)": "Você recebe (estimado)",
-    "Elegir ▾": "Escolher ▾",
-    "Ingresá un monto": "Digite um valor",
-    "Comisión BUZZ: 0.50% · se convierte a $BUZZ y va a la tesorería": "Taxa BUZZ: 0,50% · convertida em $BUZZ e enviada para a tesouraria",
-    "En tendencia ahora · pares con WLD": "Em alta agora · pares com WLD",
-
-    "Publicitar en BUZZ": "Anunciar no BUZZ",
-    "Leyendo precios…": "Lendo preços…",
-    "Paquete": "Pacote",
-    "24 horas": "24 horas",
-    "1 semana": "1 semana",
-    "Se paga en $ZORP. El anuncio entra en la rotación del banner de Inicio hasta que vence.": "Pago em $ZORP. O anúncio entra na rotação do banner da Início até expirar.",
-    "Título": "Título",
-    "Nombre de tu proyecto": "Nome do seu projeto",
-    "Una línea corta": "Uma linha curta",
-    "Texto del botón": "Texto do botão",
-    "Ver": "Ver",
-    "Logo (URL, opcional)": "Logo (URL, opcional)",
-    "A dónde lleva": "Para onde leva",
-    "Vista previa": "Pré-visualização",
-    "Publicar": "Publicar",
-
-    "Del Launchpad": "Do Launchpad",
-    "Ver todos →": "Ver todos →",
-    "Tokens con par WLD en World Chain": "Tokens com par WLD na World Chain",
-    "por volumen y actividad de las últimas 24 h": "por volume e atividade das últimas 24 h",
-    "Cargando tokens en tendencia…": "Carregando tokens em alta…",
-
-    "Tu cuenta": "Sua conta",
-    "Tokens que agregaste": "Tokens que você adicionou",
-    "Podés cambiarles el logo y las redes las veces que quieras, sin volver a pagar.": "Você pode trocar o logo e as redes quantas vezes quiser, sem pagar novamente.",
-    "Pools esperando aprobación": "Pools aguardando aprovação",
-    "Al aprobar, los 5.000 BUZZ del creador se queman. Al rechazar, se le devuelve todo.": "Ao aprovar, os 5.000 BUZZ do criador são queimados. Ao rejeitar, tudo é devolvido.",
-    "Tokens que agregaron los usuarios": "Tokens adicionados pelos usuários",
-    "Cada uno pagó 3 WLD. Para que se puedan operar tienen que estar también en Contract Entrypoints del Developer Portal.": "Cada um pagou 3 WLD. Para poderem ser negociados, também precisam estar em Contract Entrypoints no Developer Portal.",
-    "Buscar": "Buscar",
-    "Copiar todas": "Copiar todas",
-    "Bloqueá tokens y ganá": "Bloqueie tokens e ganhe",
-    "Bloqueás por el plazo del pool y ganás según su APY. Pasado el plazo retirás cuando quieras, y si lo dejás sigue generando.": "Você bloqueia pelo prazo do pool e ganha conforme seu APY. Após o prazo, você retira quando quiser, e se deixar, continua rendendo.",
-    "Tocá ↻ para cargar": "Toque em ↻ para carregar",
-    "➕ Abrir mi propio pool": "➕ Abrir meu próprio pool",
-    "Pools que creaste": "Pools que você criou",
-    "Reclamo diario": "Resgate diário",
-    "Reclamar": "Resgatar",
-    "Invitá y ganá": "Convide e ganhe",
-    "PARA VOS": "PARA VOCÊ",
-    "PARA TU AMIGO": "PARA SEU AMIGO",
-    "Copiá tu enlace y pasáselo a quien quieras. Cuando esa persona lo abra y conecte su wallet,": "Copie seu link e envie para quem quiser. Quando essa pessoa abrir e conectar a carteira,",
-    "el premio se acredita solo": "o prêmio é creditado automaticamente",
-    ": no tiene que escribir tu nombre ni buscar nada.": ": ela não precisa digitar seu nome nem procurar nada.",
-    "Se paga una vez por persona, la primera vez que entra.": "Pago uma vez por pessoa, na primeira vez que entra.",
-    "📤 Copiar mi enlace": "📤 Copiar meu link",
-    "¿Alguien te invitó y no se registró solo? Poné su wallet acá y cobran los dos.": "Alguém te convidou e não foi registrado automaticamente? Coloque a carteira dessa pessoa aqui e os dois recebem.",
-    "Confirmar invitador": "Confirmar convite",
-    "Misiones": "Missões",
-    "Historial": "Histórico",
-    "Tus movimientos": "Suas movimentações",
-
-    "Elegí un token": "Escolha um token",
-    "Nombre, símbolo o pegar la dirección": "Nome, símbolo ou cole o endereço",
-    "➕ Agregar un token": "➕ Adicionar um token",
-    "Bloquear": "Bloquear",
-    "MAX": "MAX",
-    "Confirmar": "Confirmar",
-    "Abrir un pool": "Abrir um pool",
-    "Depositás tu token como recompensa y elegís cuánto pagar por año.": "Você deposita seu token como recompensa e escolhe quanto pagar por ano.",
-    "Cuesta": "Custa",
-    "5.000 BUZZ": "5.000 BUZZ",
-    ", que se queman al aprobarse.": ", que são queimados na aprovação.",
-    "Mínimo de recompensa:": "Recompensa mínima:",
-    "500.000": "500.000",
-    "del token.": "do token.",
-    "Dirección del token": "Endereço do token",
-    "Nombre del pool": "Nome do pool",
-    "Ej: Staking de MITOKEN": "Ex: Staking do MEUTOKEN",
-    "APY anual": "APY anual",
-    "Días de bloqueo": "Dias de bloqueio",
-    "Recompensa a depositar": "Recompensa a depositar",
-    "Solicitar pool": "Solicitar pool",
-    "Agregar un token": "Adicionar um token",
-    "Cualquiera puede sumar un token de World Chain a la lista de la app.": "Qualquer pessoa pode adicionar um token da World Chain à lista do app.",
-    "Cuesta 3 WLD y queda disponible para todos los usuarios.": "Custa 3 WLD e fica disponível para todos os usuários.",
-    "Puede tardar unas horas en quedar operativo, porque hace falta una habilitación manual del lado de World App.": "Pode levar algumas horas para ficar operacional, pois é necessária uma aprovação manual do lado do World App.",
-    "Dirección del contrato": "Endereço do contrato",
-    "Logo (opcional)": "Logo (opcional)",
-    "Agregar por 3 WLD": "Adicionar por 3 WLD",
-    "Token": "Token",
-    "Dirección o usuario": "Endereço ou usuário",
-    "Cantidad": "Quantidade",
-    "Tu dirección": "Seu endereço",
-    "Copiar dirección": "Copiar endereço",
-
-    "Actividad 24 h": "Atividade 24 h",
-    "Compras": "Compras",
-    "Ventas": "Vendas",
-    "Tu saldo": "Seu saldo",
-    "Valor de tu saldo": "Valor do seu saldo",
-    "Suministro total": "Fornecimento total",
-    "Par principal": "Par principal",
-    "DEX": "DEX",
-    "Pool creado": "Pool criado",
-    "📊 GeckoTerminal": "📊 GeckoTerminal",
-    "🙈 Ocultar de mi wallet": "🙈 Ocultar da minha carteira",
-    "Precio": "Preço",
-    "Precio en WLD": "Preço em WLD",
-    "Capitalización (MC)": "Capitalização (MC)",
-    "FDV": "FDV",
-    "Liquidez": "Liquidez",
-    "Volumen 24 h": "Volume 24 h",
-    "Variación": "Variação",
-  }
-};
-
-
-  const LANG_KEY = 'buzz_lang';
-  let currentLang = localStorage.getItem(LANG_KEY) || 'es';
-
-  // Guarda el texto original de cada nodo la primera vez que se ve,
-  // para poder volver a español o re-traducir sin perder datos.
-  const ORIG = new WeakMap();
-
-  function shouldSkip(node){
-    const p = node.parentElement;
-    if (!p) return true;
-    const tag = p.tagName;
-    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return true;
-    return false;
-  }
-
-  function translateText(txt, lang){
-    if (!txt) return txt;
-    const trimmed = txt.trim();
-    if (!trimmed) return txt;
-    if (lang === 'es') return txt;
-    const dict = BUZZ_I18N[lang];
-    if (!dict) return txt;
-
-    // 1) coincidencia exacta (incluyendo espacios originales)
-    if (dict[trimmed] !== undefined) {
-      return txt.replace(trimmed, dict[trimmed]);
-    }
-    // 2) reemplazo de subfrases conocidas dentro de textos compuestos
-    let out = txt;
-    let changed = false;
-    // ordenar claves más largas primero para evitar reemplazos parciales incorrectos
-    const keys = Object.keys(dict).sort((a,b)=> b.length - a.length);
-    for (const k of keys) {
-      if (k.length < 3) continue; // evita falsos positivos en palabras muy cortas
-      if (out.includes(k)) {
-        out = out.split(k).join(dict[k]);
-        changed = true;
-      }
-    }
-    return changed ? out : txt;
-  }
-
-  function walk(node, lang){
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (shouldSkip(node)) return;
-      if (!ORIG.has(node)) ORIG.set(node, node.nodeValue);
-      const original = ORIG.get(node);
-      node.nodeValue = translateText(original, lang);
-      return;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    // no entrar en árboles de iconos (son solo <img>, sin texto) — inocuo igual
-    for (const child of Array.from(node.childNodes)) {
-      walk(child, lang);
-    }
-    // atributos traducibles comunes (placeholder, aria-label, title) en inputs/botones
-    if (node.hasAttribute && node.hasAttribute('placeholder')) {
-      const key = 'ph:' + (node.id || '');
-      if (!ORIG.has(node)) ORIG.set(node, {});
-      const store = ORIG.get(node);
-      if (typeof store === 'object') {
-        if (store.placeholder === undefined) store.placeholder = node.getAttribute('placeholder');
-        node.setAttribute('placeholder', translateText(store.placeholder, lang));
-      }
-    }
-  }
-
-  function applyLang(lang){
-    const root = document.body;
-    walk(root, lang);
-    document.documentElement.lang = lang;
-    localStorage.setItem(LANG_KEY, lang);
-    currentLang = lang;
-    document.querySelectorAll('#langMenu button').forEach(b=>{
-      b.classList.toggle('active', b.dataset.lang === lang);
-    });
-  }
-
-  // Traduce contenido agregado dinámicamente (listas de tokens, historial, etc.)
-  const observer = new MutationObserver((mutations)=>{
-    if (currentLang === 'es') return;
-    for (const m of mutations) {
-      m.addedNodes.forEach(n=>{
-        if (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE) {
-          walk(n, currentLang);
-        }
-      });
-    }
-  });
-
-  function startObserving(){
-    observer.observe(document.body, { childList:true, subtree:true, characterData:true });
-  }
-
-  window.setLang = function(lang){
-    applyLang(lang);
-    const menu = document.getElementById('langMenu');
-    if (menu) menu.classList.remove('open');
-  };
-
-  window.toggleLangMenu = function(){
-    const menu = document.getElementById('langMenu');
-    if (menu) menu.classList.toggle('open');
-  };
-
-  document.addEventListener('click', function(e){
-    const menu = document.getElementById('langMenu');
-    const btn = document.getElementById('langBtn');
-    if (!menu || !btn) return;
-    if (menu.classList.contains('open') && !menu.contains(e.target) && e.target !== btn) {
-      menu.classList.remove('open');
-    }
-  });
-
-  document.addEventListener('DOMContentLoaded', function(){
-    startObserving();
-    if (currentLang !== 'es') applyLang(currentLang);
-    else {
-      document.querySelectorAll('#langMenu button').forEach(b=>{
-        b.classList.toggle('active', b.dataset.lang === 'es');
-      });
-    }
-  });
-
-  // Si el DOM ya cargó (script al final del body), ejecutar ya.
-  if (document.readyState !== 'loading') {
-    startObserving();
-    if (currentLang !== 'es') applyLang(currentLang);
-    else {
-      document.querySelectorAll('#langMenu button').forEach(b=>{
-        b.classList.toggle('active', b.dataset.lang === 'es');
-      });
-    }
-  }
-})();
-</script>
-
 </body>
 </html>
