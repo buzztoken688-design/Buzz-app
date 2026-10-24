@@ -1307,9 +1307,6 @@
           (según la liquidez de la bóveda). El rendimiento lo paga Morpho, cambia con el tiempo y no está garantizado.
           Los usuarios verificados con World ID pueden recibir un bono extra dentro de Morpho.
         </div>
-        <div id="gnAdminBov" style="display:none; margin:0 0 14px;">
-          <button class="btn secondary" onclick="gnCopiarBovedas()">Copiar direcciones de las bóvedas (portal)</button>
-        </div>
       </div>
 
       <div id="gnPaneL" style="display:none;">
@@ -8900,18 +8897,9 @@
     });
     return out;
   }
-  async function gnCopiarBovedas(){
-    const dirs = [];
-    gnVaultData.forEach(d => { [d.vault, d.tok.address].forEach(a => { if(a && dirs.indexOf(a) === -1) dirs.push(a); }); });
-    const txt = dirs.join(',');
-    try{ await navigator.clipboard.writeText(txt); showToast(dirs.length + ' direcciones copiadas'); }
-    catch(e){ document.getElementById('gnMsg') && (document.getElementById('gnMsg').textContent = txt); prompt('Copiá estas direcciones:', txt); }
-  }
-
   async function cargarGuardar(){
     const box = document.getElementById('gnVaultList');
     if(!userAddress){ box.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
-    const adm = document.getElementById('gnAdminBov'); if(adm) adm.style.display = esAdmin() ? 'block' : 'none';
     if(!gnVaultData.length) box.innerHTML = '<div class="empty-state">Cargando…</div>';
     try{
       await initEthers();
