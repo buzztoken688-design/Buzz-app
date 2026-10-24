@@ -2538,7 +2538,20 @@
 
       const withBalance = results.filter(r => r.bal !== null && r.bal > 0n);
 
-      listEl.innerHTML = `<div class="empty-state">Buscando precios (${withBalance.length} tokens con saldo)…</div>`;
+      // Si ya hay una lista en pantalla (la última que vio el usuario), NO se toca: los
+      // precios se buscan por detrás y la lista se cambia de golpe al final.
+      // Si es la primera vez en este teléfono, se muestran ya los tokens con su saldo
+      // (sin precio todavía) en vez de un mensaje de espera.
+      if(!listEl.querySelector('.token-row')){
+        let pinto = false;
+        try{
+          const previos = withBalance.map(r => Object.assign({}, r, { usdValue: null }));
+          const frag0 = document.createDocumentFragment();
+          const h0 = armarFilasTokens(previos, [], frag0);
+          if(h0.shown.length){ listEl.replaceChildren(frag0); pinto = true; }
+        }catch(e){}
+        if(!pinto) listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
+      }
 
       // precio en USD vía DexScreener, solo informativo — no decide si se muestra o no
       async function fetchPricesInBatches(items, batchSize){
