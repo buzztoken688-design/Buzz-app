@@ -314,6 +314,23 @@
   .trend-chip .chg.up{color:var(--buzz);}
   .trend-chip .chg.down{color:var(--red);}
   .trend-empty{font-size:12px; color:var(--text-faint); padding:7px 2px;}
+  /* carrusel de tendencias (Swap): de a dos, rodando solo */
+  .trend-strip{display:block; overflow:visible;}
+  .tc-track{display:flex; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+  .tc-track::-webkit-scrollbar{display:none;}
+  .tc-page{flex:0 0 100%; box-sizing:border-box; scroll-snap-align:start; display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:2px 1px;}
+  .tc-card{min-width:0; display:flex; flex-direction:column; gap:7px; text-align:left; color:var(--text); font-family:inherit;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:16px; padding:12px;}
+  .tc-card:active{border-color:var(--buzz-dim);}
+  .tc-card.buzz{border-color:var(--buzz-dim); background:linear-gradient(135deg, rgba(255,193,7,.14), var(--panel-2));}
+  .tc-top{display:flex; align-items:center; gap:9px; min-width:0;}
+  .tc-sym{font-size:16px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tc-price{font-size:13px; color:var(--text-dim); font-weight:600;}
+  .tc-card .trend-chg{font-size:16px; font-weight:800;}
+  .tc-dots{display:flex; align-items:center; gap:6px; margin:10px 2px 0;}
+  .tc-dots i{width:6px; height:6px; border-radius:50%; background:var(--border); transition:all .25s;}
+  .tc-dots i.on{width:16px; background:var(--buzz);}
+  .tc-all{margin-left:auto; font-size:12px; font-weight:700; color:var(--buzz); cursor:pointer;}
 
   .modal-overlay{
     position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:150;
@@ -865,6 +882,7 @@
   .gn-note{font-size:11px; color:var(--text-faint); line-height:1.5; margin:4px 2px 14px;}
   .gn-msg{font-size:12px; color:var(--text-dim); margin-top:12px; min-height:16px; line-height:1.5; word-break:break-word;}
   .gn-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .trend-row.trend-buzz{background:linear-gradient(90deg, rgba(255,193,7,.12), transparent); border-radius:12px;}
   .gn-badge.warn{color:#ffb020; border-color:#ffb020;}
   .gn-btn-gan{background:transparent; border:1px solid var(--up); color:var(--up); margin-top:8px;}
   .gn-btn-gan:disabled{border-color:var(--border); color:var(--text-faint);}
@@ -1306,9 +1324,6 @@
           Tu dinero queda guardado en Morpho, no en BUZZ WALLET: lo podés retirar cuando quieras
           (según la liquidez de la bóveda). El rendimiento lo paga Morpho, cambia con el tiempo y no está garantizado.
           Los usuarios verificados con World ID pueden recibir un bono extra dentro de Morpho.
-        </div>
-        <div id="gnAdminBov" style="display:none; margin:0 0 14px;">
-          <button class="btn secondary" onclick="gnCopiarBovedas()">Copiar direcciones de las bóvedas (portal)</button>
         </div>
       </div>
 
@@ -2538,7 +2553,21 @@
 
       const withBalance = results.filter(r => r.bal !== null && r.bal > 0n);
 
-      listEl.innerHTML = `<div class="empty-state">Buscando precios (${withBalance.length} tokens con saldo)…</div>`;
+      // Si ya hay una lista en pantalla (la última que vio el usuario), NO se toca: los
+      // precios se buscan por detrás y la lista se cambia de golpe al final.
+      // Si es la primera vez en este teléfono, se muestran ya los tokens con su saldo
+      // (sin precio todavía) en vez de un mensaje de espera.
+      if(!listEl.querySelector('.token-row')){
+        let pinto = false;
+        try{
+          const previos = withBalance.map(r => Object.assign({}, r, { usdValue: null }))
+            .sort((a, b) => (esBuzz(b.address) ? 1 : 0) - (esBuzz(a.address) ? 1 : 0));
+          const frag0 = document.createDocumentFragment();
+          const h0 = armarFilasTokens(previos, [], frag0);
+          if(h0.shown.length){ listEl.replaceChildren(frag0); pinto = true; }
+        }catch(e){}
+        if(!pinto) listEl.innerHTML = `<div class="empty-state">Leyendo tus tokens…</div>`;
+      }
 
       // precio en USD vía DexScreener, solo informativo — no decide si se muestra o no
       async function fetchPricesInBatches(items, batchSize){
@@ -2621,10 +2650,13 @@
 
       // ordenar de mayor a menor valor en USD — los que no tienen precio (usdValue null) van al final
       priced.sort((a, b) => {
+        if(esBuzz(a.address) !== esBuzz(b.address)) return esBuzz(a.address) ? -1 : 1;   // BUZZ siempre arriba
         const va = a.usdValue === null ? -1 : a.usdValue;
         const vb = b.usdValue === null ? -1 : b.usdValue;
         return vb - va;
       });
+
+      priced.forEach(r => { if(esBuzz(r.address)) r.icon = ICONOS.inicio; });     // el logo propio de BUZZ
 
       // resolver todos los íconos EN PARALELO (evita hacerlo uno por uno).
       // Los del launchpad no están en GeckoTerminal: su logo vive on-chain
@@ -4372,10 +4404,12 @@
       base.unshift(Object.assign({}, p, {
         address: a,
         balance: 0,
-        icon: conocido ? conocido.icon : null
+        icon: esBuzz(a) ? ICONOS.inicio : (conocido ? conocido.icon : null)
       }));
     });
 
+    const iBuzz = base.findIndex(t => esBuzz(t.address));
+    if(iBuzz > 0) base.unshift(base.splice(iBuzz, 1)[0]);       // BUZZ siempre primero
     pickerLista = base;
     const buscador = document.getElementById('pickerSearch');
     buscador.value = '';
@@ -8201,6 +8235,7 @@
         errores.push('DexScreener: ' + (e && e.message ? e.message : e));
       }
 
+      try{ await buzzPrimero(out); }catch(e){}
       trendingTokens = out.slice(0, 20);
       trendingAt     = Date.now();
       trendingError  = errores.join('  ·  ');
@@ -8320,7 +8355,8 @@
 
   function trendingVisibles(){
     return trendingTokens.filter(t =>
-      t.permitido !== false && (Number(t.volume24h) || 0) >= TREND_VOL_MINIMO
+      esBuzz(t.address) ||                      // BUZZ nunca se esconde
+      (t.permitido !== false && (Number(t.volume24h) || 0) >= TREND_VOL_MINIMO)
     );
   }
 
@@ -8339,11 +8375,11 @@
         listEl.innerHTML = '';
         visibles.forEach((t, i) => {
           const row = document.createElement('div');
-          row.className = 'trend-row';
+          row.className = 'trend-row' + (esBuzz(t.address) ? ' trend-buzz' : '');
           row.style.cursor = 'pointer';
-          const badge = t.permitido === true
+          const badge = esBuzz(t.address) ? '' : (t.permitido === true
             ? '<span class="trend-badge ok">swap</span>'
-            : (t.permitido === false ? '<span class="trend-badge">no habilitado</span>' : '');
+            : (t.permitido === false ? '<span class="trend-badge">no habilitado</span>' : ''));
           row.innerHTML =
             '<div class="trend-rank">' + (i + 1) + '</div>' +
             '<div class="tk-icon" style="width:34px; height:34px; font-size:13px;">' +
@@ -8363,25 +8399,70 @@
       }
     }
 
-    // ---- tira horizontal (pantalla Swap) ----
+    // ---- carrusel (pantalla Swap): de a dos, rodando solo ----
+    renderTiraTendencias();
+  }
+
+  let tcTimer = null, tcPausaHasta = 0;
+  function renderTiraTendencias(){
     const stripEl = document.getElementById('trendStrip');
-    if(stripEl){
-      const visiblesTira = trendingVisibles();
-      if(!visiblesTira.length){
-        stripEl.innerHTML = '<div class="trend-empty">Sin datos por ahora</div>';
-      }else{
-        stripEl.innerHTML = '';
-        visiblesTira.slice(0, 12).forEach(t => {
-          const chip = document.createElement('button');
-          chip.className = 'trend-chip';
-          chip.innerHTML =
-            (t.icon ? '<img src="' + esc(t.icon) + '" alt="" onerror="this.remove()">' : '') +
-            '<span>' + esc(t.symbol) + '</span>' +
-            chgHtml(t.change24h, 'chg');
-          chip.onclick = () => pickTrending(t);
-          stripEl.appendChild(chip);
-        });
-      }
+    if(!stripEl) return;
+    const vis = trendingVisibles().slice(0, 12);
+    if(!vis.length){ stripEl.innerHTML = '<div class="trend-empty">Sin datos por ahora</div>'; return; }
+
+    // al volver a dibujar (llegan datos nuevos) se queda en la misma página
+    const previo = stripEl.querySelector('.tc-track');
+    const paginaPrev = (previo && previo.clientWidth) ? Math.round(previo.scrollLeft / previo.clientWidth) : 0;
+
+    const paginas = [];
+    for(let i = 0; i < vis.length; i += 2) paginas.push(vis.slice(i, i + 2));
+    stripEl.innerHTML = '';
+    const track = document.createElement('div');
+    track.className = 'tc-track'; track.id = 'tcTrack';
+    paginas.forEach(par => {
+      const pag = document.createElement('div');
+      pag.className = 'tc-page';
+      par.forEach(t => {
+        const c = document.createElement('button');
+        c.className = 'tc-card' + (esBuzz(t.address) ? ' buzz' : '');
+        c.innerHTML =
+          '<div class="tc-top"><div class="tk-icon" style="width:38px; height:38px; font-size:14px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;">' +
+            tkIconHtml({ icon: t.icon, symbol: t.symbol }) + '</div>' +
+            '<div class="tc-sym">' + esc(t.symbol) + '</div></div>' +
+          '<div class="tc-price">' + fmtTokenPrice(t.priceUsd) + '</div>' +
+          chgHtml(t.change24h, 'trend-chg');
+        c.onclick = () => pickTrending(t);
+        pag.appendChild(c);
+      });
+      track.appendChild(pag);
+    });
+    stripEl.appendChild(track);
+
+    const dots = document.createElement('div');
+    dots.className = 'tc-dots';
+    dots.innerHTML = paginas.map((_, i) => '<i' + (i === paginaPrev ? ' class="on"' : '') + '></i>').join('') +
+      '<span class="tc-all" onclick="goTab(\'tendencias\')">Ver todas ›</span>';
+    stripEl.appendChild(dots);
+
+    if(paginaPrev && track.clientWidth) track.scrollLeft = paginaPrev * track.clientWidth;
+    const marcar = () => {
+      const n = track.clientWidth ? Math.round(track.scrollLeft / track.clientWidth) : 0;
+      dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', i === n));
+    };
+    track.addEventListener('scroll', marcar, { passive: true });
+    // si el usuario lo toca, el carrusel espera unos segundos antes de seguir rodando
+    ['touchstart', 'pointerdown', 'wheel'].forEach(ev =>
+      track.addEventListener(ev, () => { tcPausaHasta = Date.now() + 7000; }, { passive: true }));
+
+    if(!tcTimer){
+      tcTimer = setInterval(() => {
+        const tr = document.getElementById('tcTrack');
+        if(!tr || !tr.offsetParent || document.hidden || Date.now() < tcPausaHasta || !tr.clientWidth) return;
+        const n = Math.round(tr.scrollWidth / tr.clientWidth);
+        if(n < 2) return;
+        const act = Math.round(tr.scrollLeft / tr.clientWidth);
+        tr.scrollTo({ left: ((act + 1) % n) * tr.clientWidth, behavior: 'smooth' });
+      }, 3500);
     }
   }
 
@@ -8887,18 +8968,9 @@
     });
     return out;
   }
-  async function gnCopiarBovedas(){
-    const dirs = [];
-    gnVaultData.forEach(d => { [d.vault, d.tok.address].forEach(a => { if(a && dirs.indexOf(a) === -1) dirs.push(a); }); });
-    const txt = dirs.join(',');
-    try{ await navigator.clipboard.writeText(txt); showToast(dirs.length + ' direcciones copiadas'); }
-    catch(e){ document.getElementById('gnMsg') && (document.getElementById('gnMsg').textContent = txt); prompt('Copiá estas direcciones:', txt); }
-  }
-
   async function cargarGuardar(){
     const box = document.getElementById('gnVaultList');
     if(!userAddress){ box.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
-    const adm = document.getElementById('gnAdminBov'); if(adm) adm.style.display = esAdmin() ? 'block' : 'none';
     if(!gnVaultData.length) box.innerHTML = '<div class="empty-state">Cargando…</div>';
     try{
       await initEthers();
@@ -9680,7 +9752,7 @@
       if(!c || c.u !== (userAddress || '').toLowerCase() || !c.items || !c.items.length) return false;
       const items = c.items.map(x => {
         const known = (typeof KNOWN_TOKENS !== 'undefined') ? KNOWN_TOKENS.find(t => t.address.toLowerCase() === x.a) : null;
-        return { address: x.a, symbol: x.s, name: x.n, decimals: x.d, fmt: x.f, usdValue: x.u, esLanzado: !!x.l, icon: known ? known.icon : null };
+        return { address: x.a, symbol: x.s, name: x.n, decimals: x.d, fmt: x.f, usdValue: x.u, esLanzado: !!x.l, icon: esBuzz(x.a) ? ICONOS.inicio : (known ? known.icon : null) };
       });
       const frag = document.createDocumentFragment();
       const h = armarFilasTokens(items, c.items.map(x => x.g), frag);
@@ -9770,6 +9842,37 @@
     return { addr: mejor, t0: k[0], t1: k[1], fee: Number(r[2]), sqrtP: r[3][0], buzz: true };
   }
 
+
+  // ---------- BUZZ siempre primero ----------
+  function esBuzz(addr){ return (addr || '').toLowerCase() === BUZZ_TOKEN.toLowerCase(); }
+  async function trendBuzzEntrada(){
+    const buzz = BUZZ_TOKEN.toLowerCase();
+    const known = KNOWN_TOKENS.find(k => k.address.toLowerCase() === buzz);
+    const e = { address: buzz, symbol: 'BUZZ', name: 'BuzzToken', decimals: 18, icon: ICONOS.inicio,
+                priceUsd: null, change24h: null, volume24h: 0, liquidez: 0, fuente: 'ds', permitido: null };
+    try{
+      const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + BUZZ_TOKEN);
+      const d = await r.json();
+      const liq = p => (p.liquidity && p.liquidity.usd) || 0;
+      const pares = (d.pairs || []).filter(p => p.chainId === DS_CHAIN).sort((a, b) => liq(b) - liq(a));
+      const p = pares[0];
+      if(p){
+        const esBase = ((p.baseToken || {}).address || '').toLowerCase() === buzz;
+        if(esBase && p.priceUsd) e.priceUsd = p.priceUsd;
+        else if(!esBase && p.priceUsd && parseFloat(p.priceNative) > 0) e.priceUsd = String(parseFloat(p.priceUsd) / parseFloat(p.priceNative));
+        const chg = parseFloat(p.priceChange && p.priceChange.h24);
+        if(!isNaN(chg)) e.change24h = esBase ? chg : -chg;
+        e.volume24h = parseFloat(p.volume && p.volume.h24) || 0;
+        e.liquidez = liq(p);
+      }
+    }catch(err){}
+    return e;
+  }
+  async function buzzPrimero(out){
+    const i = out.findIndex(t => esBuzz(t.address));
+    if(i >= 0){ out.unshift(out.splice(i, 1)[0]); out[0].icon = ICONOS.inicio; return; }
+    out.unshift(await trendBuzzEntrada());
+  }
 
   // ============================================================
   //  SESIÓN GUARDADA — la firma de conexión se pide UNA sola vez.
