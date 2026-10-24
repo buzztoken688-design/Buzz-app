@@ -1307,6 +1307,9 @@
           (según la liquidez de la bóveda). El rendimiento lo paga Morpho, cambia con el tiempo y no está garantizado.
           Los usuarios verificados con World ID pueden recibir un bono extra dentro de Morpho.
         </div>
+        <div id="gnAdminBov" style="display:none; margin:0 0 14px;">
+          <button class="btn secondary" onclick="gnCopiarBovedas()">Copiar direcciones de las bóvedas (portal)</button>
+        </div>
       </div>
 
       <div id="gnPaneL" style="display:none;">
@@ -8702,7 +8705,10 @@
   const GN_NPM = '0xec12a9F9a09f50550686363766Cc153D03c27b5e'.toLowerCase(); // gestor oficial de posiciones Uniswap V3 (World Chain)
   const GN_VAULTS = [
     { id:'wld',  vault:'0x348831b46876d3dF2Db98BdEc5E3B4083329Ab9f'.toLowerCase() }, // Re7 WLD
-    { id:'usdc', vault:'0xb1E80387EbE53Ff75a89736097D34dC8D9E9045B'.toLowerCase() }  // Re7 USDC
+    { id:'usdc', vault:'0xb1E80387EbE53Ff75a89736097D34dC8D9E9045B'.toLowerCase() }, // Re7 USDC
+    { id:'wbtc', vault:'0xBC8C37467c5Df9D50B42294B8628c25888BECF61'.toLowerCase() }, // Re7 WBTC
+    { id:'weth', vault:'0x0Db7E405278c2674F462aC9D9eb8b8346D1c1571'.toLowerCase() }, // Re7 WETH
+    { id:'eurc', vault:'0xDaa79e066DeE8c8C15FFb37b1157F7Eb8e0d1b37'.toLowerCase() }  // Re7 EURC (la app lee asset() y oculta la bóveda si no responde como tal)
   ];
   // pools de Uniswap V3 con dinero real (verificados); cada uno se vuelve a
   // comprobar contra la factory oficial antes de mostrarse
@@ -8821,14 +8827,85 @@
     }catch(e){ return null; }
   }
 
+
+  // ---------- todas las bóvedas de Morpho en World Chain ----------
+  // Las dos primeras están fijas (verificadas). El resto se pide a la API de
+  // Morpho y se queda en el teléfono una hora. Solo entran bóvedas "listadas"
+  // por Morpho (o, si la API no lo informa, con más de US$ 50.000 adentro).
+  // IMPORTANTE: cada bóveda y su token tienen que estar cargados en el portal
+  // (Contract Entrypoints); si no, World App no deja firmar.
+  const GN_BOV_KEY = 'buzz_morpho_vaults';
+  async function gnBovedasApi(){
+    for(const campo of ['listed', 'whitelisted', null]){
+      try{
+        const q = '{ vaults(first: 60, where: { chainId_in: [' + CHAIN_ID + '] }) { items { address name symbol '
+                + (campo ? campo + ' ' : '') + 'asset { address symbol } state { totalAssetsUsd netApy } } } }';
+        const r = await fetch('https://blue-api.morpho.org/graphql', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q })
+        });
+        const j = await r.json();
+        const items = j && j.data && j.data.vaults && j.data.vaults.items;
+        if(!Array.isArray(items)) continue;          // el campo no existe en la API: se prueba el siguiente
+        const out = [];
+        items.forEach(it => {
+          if(!it || !it.address) return;
+          const tvl = (it.state && typeof it.state.totalAssetsUsd === 'number') ? it.state.totalAssetsUsd : 0;
+          const ok = campo ? (it[campo] === true) : (tvl >= 50000);
+          if(!ok || tvl < 1000) return;
+          out.push({
+            vault: it.address.toLowerCase(), nombre: it.name || '', tvl,
+            apy: (it.state && typeof it.state.netApy === 'number') ? it.state.netApy * 100 : null
+          });
+        });
+        if(!out.length) continue;
+        out.sort((a, b) => b.tvl - a.tvl);
+        return out.slice(0, 12);
+      }catch(e){}
+    }
+    return [];
+  }
+  async function gnBovedas(){
+    const base = GN_VAULTS.map(v => ({ vault: v.vault, nombre: '', apy: null }));
+    let extra = [], cache = null;
+    try{ cache = JSON.parse(localStorage.getItem(GN_BOV_KEY) || 'null'); }catch(e){}
+    if(cache && Array.isArray(cache.items) && (Date.now() - cache.t) < 3600000){
+      extra = cache.items;
+    }else{
+      const nuevo = await gnBovedasApi();
+      if(nuevo.length){
+        extra = nuevo;
+        try{ localStorage.setItem(GN_BOV_KEY, JSON.stringify({ t: Date.now(), items: nuevo })); }catch(e){}
+      }else if(cache && Array.isArray(cache.items)){
+        extra = cache.items;                          // la API no respondió: se usa la última lista
+      }
+    }
+    const out = base.slice();
+    extra.forEach(x => {
+      const ya = out.find(o => o.vault === x.vault);
+      if(ya){ ya.nombre = x.nombre || ya.nombre; if(x.apy != null) ya.apy = x.apy; }
+      else out.push(x);
+    });
+    return out;
+  }
+  async function gnCopiarBovedas(){
+    const dirs = [];
+    gnVaultData.forEach(d => { [d.vault, d.tok.address].forEach(a => { if(a && dirs.indexOf(a) === -1) dirs.push(a); }); });
+    const txt = dirs.join(',');
+    try{ await navigator.clipboard.writeText(txt); showToast(dirs.length + ' direcciones copiadas'); }
+    catch(e){ document.getElementById('gnMsg') && (document.getElementById('gnMsg').textContent = txt); prompt('Copiá estas direcciones:', txt); }
+  }
+
   async function cargarGuardar(){
     const box = document.getElementById('gnVaultList');
     if(!userAddress){ box.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
+    const adm = document.getElementById('gnAdminBov'); if(adm) adm.style.display = esAdmin() ? 'block' : 'none';
     if(!gnVaultData.length) box.innerHTML = '<div class="empty-state">Cargando…</div>';
     try{
       await initEthers();
       const p = await getReadProvider();
-      const datos = await Promise.all(GN_VAULTS.map(async (v) => {
+      const listaBov = await gnBovedas();
+      const datos = (await Promise.all(listaBov.map(async (v) => {
+       try{
         const c = new ethers.Contract(v.vault, GN_VAULT_ABI, p);
         const assetAddr = await c.asset();
         const tok = await gnTok(assetAddr);
@@ -8840,13 +8917,14 @@
           pos = await c.convertToAssets(shares);
           try{ maxW = await c.maxWithdraw(userAddress); }catch(e){ maxW = pos; }
         }
-        return { vault: v.vault, tok, shares, pos, maxW, wallet, apy: null, cap: null, gan: 0n };
-      }));
+        return { vault: v.vault, tok, shares, pos, maxW, wallet, apy: (v.apy != null ? v.apy : null), nombre: v.nombre || '', cap: null, gan: 0n };
+       }catch(e){ return null; }      // una bóveda que no responde no tira abajo a las demás
+      }))).filter(Boolean);
       gnVaultData = datos;
       renderGuardar();
       gnResolverCapital(datos);
       datos.forEach(async (d, i) => {
-        const a = await gnApy(d.vault);
+        const a = (d.apy != null) ? d.apy : await gnApy(d.vault);
         if(gnVaultData[i] && gnVaultData[i].vault === d.vault){ gnVaultData[i].apy = a; renderGuardar(); }
       });
     }catch(e){
@@ -8864,7 +8942,7 @@
       return `
       <div class="card">
         <div class="gn-row">
-          <div><div class="gn-name">${d.tok.sym}</div><div class="gn-sub">Morpho · bóveda Re7</div></div>
+          <div><div class="gn-name">${d.tok.sym}</div><div class="gn-sub">Morpho · ${d.nombre ? esc(d.nombre) : 'bóveda'}</div></div>
           <div class="gn-apy">${d.apy == null ? '—' : d.apy.toFixed(2) + '% APY'}</div>
         </div>
         <div class="gn-stats">
