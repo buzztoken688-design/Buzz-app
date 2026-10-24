@@ -1319,6 +1319,7 @@
       </div>
 
       <div id="gnPaneG">
+        <div id="gnRecBox"></div>
         <div id="gnVaultList"><div class="empty-state">Cargando…</div></div>
         <div class="gn-note">
           Tu dinero queda guardado en Morpho, no en BUZZ WALLET: lo podés retirar cuando quieras
@@ -8968,6 +8969,92 @@
     });
     return out;
   }
+
+  // ---------- recompensas de Morpho (bono para verificados) ----------
+  // Morpho las reparte por Merkl: la app de World las muestra como "Canjear ahora".
+  // Se leen de la API de Merkl y se reclaman desde el Distributor oficial.
+  // IMPORTANTE: el Distributor tiene que estar en Contract Entrypoints.
+  const GN_MERKL_DIST = '0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00Dd9Ae'.toLowerCase();
+  const GN_MERKL_ABI = ['function claim(address[] users, address[] tokens, uint256[] amounts, bytes32[][] proofs)'];
+  // solo se reclaman tokens conocidos (así nadie puede colarte un token raro)
+  const GN_REC_PERMITIDOS = [
+    WLD_ADDRESS, USDC_ADDRESS, '0x4200000000000000000000000000000000000006',
+    '0x03C7054BCB39f7b2e5B2c7AcB37583e32D70Cfa3', '0x1C60ba0A0eD1019e8Eb035E6daF4155A5cE2380B', BUZZ_TOKEN
+  ].map(a => a.toLowerCase());
+  let gnRec = null;     // null = cargando; [] = nada por reclamar
+
+  async function gnCargarRecompensas(){
+    if(!userAddress) return;
+    try{
+      const r = await fetch('https://api.merkl.xyz/v4/users/' + userAddress + '/rewards?chainId=' + CHAIN_ID);
+      const j = await r.json();
+      const lista = [];
+      (Array.isArray(j) ? j : []).forEach(ch => {
+        ((ch && ch.rewards) || []).forEach(x => {
+          try{
+            const tk = x.token || {};
+            const addr = (tk.address || '').toLowerCase();
+            if(GN_REC_PERMITIDOS.indexOf(addr) === -1) return;
+            const total = BigInt(x.amount || '0'), ya = BigInt(x.claimed || '0');
+            if(total <= ya) return;
+            lista.push({ token: addr, sym: tk.symbol || '?', dec: Number(tk.decimals != null ? tk.decimals : 18),
+                         price: Number(tk.price) || 0, total, falta: total - ya, proofs: x.proofs || [] });
+          }catch(e){}
+        });
+      });
+      gnRec = lista;
+    }catch(e){ gnRec = []; }
+    gnRenderRecompensas();
+  }
+  function gnRenderRecompensas(){
+    const box = document.getElementById('gnRecBox');
+    if(!box) return;
+    if(gnRec === null){ box.innerHTML = ''; return; }
+    let usd = 0;
+    const filas = gnRec.map(x => {
+      const n = Number(ethers.formatUnits(x.falta, x.dec));
+      usd += n * x.price;
+      return '<div class="gn-sub" style="margin:2px 0;">' + gnFmt(x.falta, x.dec, 6) + ' ' + esc(x.sym) + '</div>';
+    }).join('');
+    const hay = gnRec.length > 0;
+    box.innerHTML = `
+      <div class="card">
+        <div class="gn-row">
+          <div><div class="gn-name">Recompensas por reclamar</div><div class="gn-sub">Bono de Morpho · se actualiza a diario</div></div>
+          <div class="gn-apy">${hay ? (usd > 0 ? '$' + (usd < 0.01 ? usd.toFixed(4) : usd.toFixed(2)) : '') : '—'}</div>
+        </div>
+        <div style="margin:10px 0 2px;">${hay ? filas : '<div class="gn-sub">Nada por reclamar todavía.</div>'}</div>
+        <button class="btn gn-btn-gan" id="gnRecBtn" onclick="gnReclamar()" ${hay ? '' : 'disabled'}>Reclamar</button>
+        <div class="gn-msg" id="gnRecMsg"></div>
+      </div>`;
+  }
+  async function gnReclamar(){
+    if(gnOcupado || !gnRec || !gnRec.length) return;
+    const msg = document.getElementById('gnRecMsg'), btn = document.getElementById('gnRecBtn');
+    gnOcupado = true; btn.disabled = true;
+    msg.textContent = 'Firmá en World App…';
+    try{
+      const iface = new ethers.Interface(GN_MERKL_ABI);
+      const data = iface.encodeFunctionData('claim', [
+        gnRec.map(() => userAddress), gnRec.map(x => x.token), gnRec.map(x => x.total), gnRec.map(x => x.proofs)
+      ]);
+      const r = await gnEnviar([{ to: GN_MERKL_DIST, data }]);
+      if(r.ok){
+        msg.textContent = '✅ Recompensas enviadas a tu wallet.';
+        showToast('Recompensas reclamadas');
+        setTimeout(() => { gnCargarRecompensas(); loadBalances(); }, 1500);
+      }else{
+        msg.textContent = 'No se completó.' + (r.motivo ? ' (' + r.motivo + ')' : '') + ' Intentá de nuevo en un rato.';
+        btn.disabled = false;
+      }
+    }catch(e){
+      msg.textContent = (e && e.message) ? e.message : 'Falló el envío';
+      btn.disabled = false;
+    }finally{
+      gnOcupado = false;
+    }
+  }
+
   async function cargarGuardar(){
     const box = document.getElementById('gnVaultList');
     if(!userAddress){ box.innerHTML = '<div class="empty-state">Conectando tu cuenta…</div>'; return; }
@@ -8995,6 +9082,7 @@
       gnVaultData = datos;
       renderGuardar();
       gnResolverCapital(datos);
+      gnCargarRecompensas();
       datos.forEach(async (d, i) => {
         const a = (d.apy != null) ? d.apy : await gnApy(d.vault);
         if(gnVaultData[i] && gnVaultData[i].vault === d.vault){ gnVaultData[i].apy = a; renderGuardar(); }
