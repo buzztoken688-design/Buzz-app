@@ -865,6 +865,7 @@
   .gn-note{font-size:11px; color:var(--text-faint); line-height:1.5; margin:4px 2px 14px;}
   .gn-msg{font-size:12px; color:var(--text-dim); margin-top:12px; min-height:16px; line-height:1.5; word-break:break-word;}
   .gn-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .trend-row.trend-buzz{background:linear-gradient(90deg, rgba(255,193,7,.12), transparent); border-radius:12px;}
   .gn-badge.warn{color:#ffb020; border-color:#ffb020;}
   .gn-btn-gan{background:transparent; border:1px solid var(--up); color:var(--up); margin-top:8px;}
   .gn-btn-gan:disabled{border-color:var(--border); color:var(--text-faint);}
@@ -2542,7 +2543,8 @@
       if(!listEl.querySelector('.token-row')){
         let pinto = false;
         try{
-          const previos = withBalance.map(r => Object.assign({}, r, { usdValue: null }));
+          const previos = withBalance.map(r => Object.assign({}, r, { usdValue: null }))
+            .sort((a, b) => (esBuzz(b.address) ? 1 : 0) - (esBuzz(a.address) ? 1 : 0));
           const frag0 = document.createDocumentFragment();
           const h0 = armarFilasTokens(previos, [], frag0);
           if(h0.shown.length){ listEl.replaceChildren(frag0); pinto = true; }
@@ -2631,6 +2633,7 @@
 
       // ordenar de mayor a menor valor en USD — los que no tienen precio (usdValue null) van al final
       priced.sort((a, b) => {
+        if(esBuzz(a.address) !== esBuzz(b.address)) return esBuzz(a.address) ? -1 : 1;   // BUZZ siempre arriba
         const va = a.usdValue === null ? -1 : a.usdValue;
         const vb = b.usdValue === null ? -1 : b.usdValue;
         return vb - va;
@@ -4386,6 +4389,8 @@
       }));
     });
 
+    const iBuzz = base.findIndex(t => esBuzz(t.address));
+    if(iBuzz > 0) base.unshift(base.splice(iBuzz, 1)[0]);       // BUZZ siempre primero
     pickerLista = base;
     const buscador = document.getElementById('pickerSearch');
     buscador.value = '';
@@ -8211,6 +8216,7 @@
         errores.push('DexScreener: ' + (e && e.message ? e.message : e));
       }
 
+      try{ await buzzPrimero(out); }catch(e){}
       trendingTokens = out.slice(0, 20);
       trendingAt     = Date.now();
       trendingError  = errores.join('  ·  ');
@@ -8330,7 +8336,8 @@
 
   function trendingVisibles(){
     return trendingTokens.filter(t =>
-      t.permitido !== false && (Number(t.volume24h) || 0) >= TREND_VOL_MINIMO
+      esBuzz(t.address) ||                      // BUZZ nunca se esconde
+      (t.permitido !== false && (Number(t.volume24h) || 0) >= TREND_VOL_MINIMO)
     );
   }
 
@@ -8349,11 +8356,11 @@
         listEl.innerHTML = '';
         visibles.forEach((t, i) => {
           const row = document.createElement('div');
-          row.className = 'trend-row';
+          row.className = 'trend-row' + (esBuzz(t.address) ? ' trend-buzz' : '');
           row.style.cursor = 'pointer';
-          const badge = t.permitido === true
+          const badge = esBuzz(t.address) ? '' : (t.permitido === true
             ? '<span class="trend-badge ok">swap</span>'
-            : (t.permitido === false ? '<span class="trend-badge">no habilitado</span>' : '');
+            : (t.permitido === false ? '<span class="trend-badge">no habilitado</span>' : ''));
           row.innerHTML =
             '<div class="trend-rank">' + (i + 1) + '</div>' +
             '<div class="tk-icon" style="width:34px; height:34px; font-size:13px;">' +
@@ -9771,6 +9778,37 @@
     return { addr: mejor, t0: k[0], t1: k[1], fee: Number(r[2]), sqrtP: r[3][0], buzz: true };
   }
 
+
+  // ---------- BUZZ siempre primero ----------
+  function esBuzz(addr){ return (addr || '').toLowerCase() === BUZZ_TOKEN.toLowerCase(); }
+  async function trendBuzzEntrada(){
+    const buzz = BUZZ_TOKEN.toLowerCase();
+    const known = KNOWN_TOKENS.find(k => k.address.toLowerCase() === buzz);
+    const e = { address: buzz, symbol: 'BUZZ', name: 'BuzzToken', decimals: 18, icon: known ? known.icon : null,
+                priceUsd: null, change24h: null, volume24h: 0, liquidez: 0, fuente: 'ds', permitido: null };
+    try{
+      const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + BUZZ_TOKEN);
+      const d = await r.json();
+      const liq = p => (p.liquidity && p.liquidity.usd) || 0;
+      const pares = (d.pairs || []).filter(p => p.chainId === DS_CHAIN).sort((a, b) => liq(b) - liq(a));
+      const p = pares[0];
+      if(p){
+        const esBase = ((p.baseToken || {}).address || '').toLowerCase() === buzz;
+        if(esBase && p.priceUsd) e.priceUsd = p.priceUsd;
+        else if(!esBase && p.priceUsd && parseFloat(p.priceNative) > 0) e.priceUsd = String(parseFloat(p.priceUsd) / parseFloat(p.priceNative));
+        const chg = parseFloat(p.priceChange && p.priceChange.h24);
+        if(!isNaN(chg)) e.change24h = esBase ? chg : -chg;
+        e.volume24h = parseFloat(p.volume && p.volume.h24) || 0;
+        e.liquidez = liq(p);
+      }
+    }catch(err){}
+    return e;
+  }
+  async function buzzPrimero(out){
+    const i = out.findIndex(t => esBuzz(t.address));
+    if(i >= 0){ out.unshift(out.splice(i, 1)[0]); return; }
+    out.unshift(await trendBuzzEntrada());
+  }
 
   // ============================================================
   //  SESIÓN GUARDADA — la firma de conexión se pide UNA sola vez.
